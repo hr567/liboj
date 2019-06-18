@@ -1,0 +1,26 @@
+[package]
+name = "liboj"
+version = "0.1.0"
+description = "A high performance framework for building online judge system"
+license = "MIT"
+readme = "README.md"
+repository = "https://gitlab.com/hr567/liboj"
+authors = ["hr567 <hr567@hr567.me>"]
+edition = "2018"
+
+[dependencies]
+libmount = "0.1"
+nix = "0.14"
+tempfile = "3.*"
+uuid = { version = "0.7", features = ["v4"] }
+
+[dev-dependencies]
+
+[build-dependencies]
+bindgen = "0.49"
+
+[features]
+default = ["gcc", "gxx"]
+
+gcc = []
+gxx = []
