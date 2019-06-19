@@ -1,6 +1,6 @@
 [package]
 name = "liboj"
-version = "0.1.1"
+version = "0.1.2"
 description = "A high performance framework for building online judge system"
 license = "MIT"
 readme = "README.md"

@@ -5,7 +5,8 @@ use std::time;
 use serde::{Deserialize, Serialize};
 
 /// Definition of some common problem types.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq)]
+#[derive(Serialize, Deserialize)]
 pub enum Problem {
     Normal {
         time_limit: time::Duration,
@@ -37,7 +38,8 @@ impl Problem {
 }
 
 /// Basic judge task structure.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq)]
+#[derive(Serialize, Deserialize)]
 pub struct JudgeTask {
     pub source: Source,
     pub problem: Problem,
@@ -45,7 +47,8 @@ pub struct JudgeTask {
 
 /// Basic test case.
 /// Only include a input content and a answer content.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq)]
+#[derive(Serialize, Deserialize)]
 pub struct TestCase {
     pub input: String,
     pub answer: String,
@@ -53,14 +56,16 @@ pub struct TestCase {
 
 /// Source code structure.
 /// Use language to decide which compiler to use
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq)]
+#[derive(Serialize, Deserialize)]
 pub struct Source {
     pub language: String,
     pub code: String,
 }
 
 /// Report of judging result for each test case.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq)]
+#[derive(Serialize, Deserialize)]
 pub struct JudgeReport {
     /// Index of the test case, should be started from 0
     pub index: usize,
@@ -89,7 +94,8 @@ impl JudgeReport {
 }
 
 /// Definition of all judge results
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq)]
+#[derive(Serialize, Deserialize)]
 pub enum JudgeResult {
     CE,
     AC,
