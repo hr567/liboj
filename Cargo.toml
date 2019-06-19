@@ -1,6 +1,6 @@
 [package]
 name = "liboj"
-version = "0.1.0"
+version = "0.1.1"
 description = "A high performance framework for building online judge system"
 license = "MIT"
 readme = "README.md"
@@ -11,10 +11,12 @@ edition = "2018"
 [dependencies]
 libmount = "0.1"
 nix = "0.14"
+serde = { version = "^1.0.92", features = ["derive"] }
 tempfile = "3.*"
 uuid = { version = "0.7", features = ["v4"] }
 
 [dev-dependencies]
+serde_json = "^1.0.39"
 
 [build-dependencies]
 bindgen = "0.49"

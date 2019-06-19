@@ -3,7 +3,7 @@
 pub mod checker;
 /// Interface for different compilers.
 pub mod compiler;
-/// Structures definitions.
-pub mod structures;
 /// Program runner with resource limit and system calls filter.
 pub mod runner;
+/// Structures definitions.
+pub mod structures;
