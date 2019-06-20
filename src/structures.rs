@@ -1,20 +1,20 @@
 //! Structures for online judge system.
-use std::fmt;
-use std::time;
+use std::fmt::{self, Display};
+use std::str::FromStr;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 /// Definition of some common problem types.
-#[derive(Debug, PartialEq)]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum Problem {
     Normal {
-        time_limit: time::Duration,
+        time_limit: Duration,
         memory_limit: usize, // Bytes
         test_cases: Vec<TestCase>,
     },
     Special {
-        time_limit: time::Duration,
+        time_limit: Duration,
         memory_limit: usize, // Bytes
         test_cases: Vec<TestCase>,
         spj: Source,
@@ -38,8 +38,7 @@ impl Problem {
 }
 
 /// Basic judge task structure.
-#[derive(Debug, PartialEq)]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct JudgeTask {
     pub source: Source,
     pub problem: Problem,
@@ -47,8 +46,7 @@ pub struct JudgeTask {
 
 /// Basic test case.
 /// Only include a input content and a answer content.
-#[derive(Debug, PartialEq)]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct TestCase {
     pub input: String,
     pub answer: String,
@@ -56,23 +54,21 @@ pub struct TestCase {
 
 /// Source code structure.
 /// Use language to decide which compiler to use
-#[derive(Debug, PartialEq)]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Source {
     pub language: String,
     pub code: String,
 }
 
 /// Report of judging result for each test case.
-#[derive(Debug, PartialEq)]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct JudgeReport {
     /// Index of the test case, should be started from 0
     pub index: usize,
     /// One of the judge results
     pub result: JudgeResult,
     /// Time usage of this test case
-    pub time_usage: time::Duration,
+    pub time_usage: Duration,
     /// Memory usage of this test case(in Bytes)
     pub memory_usage: usize,
 }
@@ -81,7 +77,7 @@ impl JudgeReport {
     pub fn new(
         index: usize,
         result: JudgeResult,
-        time_usage: time::Duration,
+        time_usage: Duration,
         memory_usage: usize,
     ) -> JudgeReport {
         JudgeReport {
@@ -94,8 +90,7 @@ impl JudgeReport {
 }
 
 /// Definition of all judge results
-#[derive(Debug, PartialEq)]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum JudgeResult {
     CE,
     AC,
@@ -106,7 +101,7 @@ pub enum JudgeResult {
     RE,
 }
 
-impl fmt::Display for JudgeResult {
+impl Display for JudgeResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use JudgeResult::*;
         let s = match self {
@@ -119,5 +114,22 @@ impl fmt::Display for JudgeResult {
             WA => "WA",
         };
         write!(f, "{}", s)
+    }
+}
+
+impl FromStr for JudgeResult {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<JudgeResult, ()> {
+        match s {
+            "AC" => Ok(JudgeResult::AC),
+            "CE" => Ok(JudgeResult::CE),
+            "MLE" => Ok(JudgeResult::MLE),
+            "OLE" => Ok(JudgeResult::OLE),
+            "RE" => Ok(JudgeResult::RE),
+            "TLE" => Ok(JudgeResult::TLE),
+            "WA" => Ok(JudgeResult::WA),
+            _ => Err(()),
+        }
     }
 }
