@@ -1,0 +1,16 @@
+{
+    "suffix": "c",
+    "command": "gcc",
+    "args": [
+        "{source_file}",
+        "-o",
+        "{executable_file}",
+        "-O2",
+        "-fno-asm",
+        "-Wall",
+        "-lm",
+        "--static",
+        "--std=c99"
+    ],
+    "timeout": 5
+}

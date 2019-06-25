@@ -1,14 +1,20 @@
 //! Program runner with resource limit and system call filter.
-// FIXME: Missing tests
+// TODO: Add tests
+// TODO: Need improvements
 mod cgroup;
 mod seccomp;
 
-use std::ffi;
-use std::fs;
+use cgroup::*;
+use seccomp::*;
+
+// use std::borrow::ToOwned;
+use std::error::Error;
+use std::ffi::CString;
+use std::fs::File;
 use std::io;
-use std::path;
+use std::path::{Path, PathBuf};
 use std::thread;
-use std::time;
+use std::time::Instant;
 
 use std::os::unix::{
     ffi::OsStrExt as _,
@@ -16,6 +22,8 @@ use std::os::unix::{
 };
 
 use nix;
+
+use crate::structures::{ResourceLimit, ResourceUsage};
 
 /// Report of the program
 #[derive(Debug)]
@@ -25,142 +33,142 @@ pub struct RunnerReport {
     pub exit_success: bool,
 
     /// time the program use in real world
-    pub real_time_usage: time::Duration,
-
-    /// cpu time the program use
-    pub cpu_time_usage: time::Duration,
-
-    /// memory the program use
-    pub memory_usage: usize,
-
-    /// set to `true` if the program timeout
-    pub tle_flag: bool,
-
-    /// set to `true` if the program use too many memory
-    pub mle_flag: bool,
+    pub resource_usage: Option<ResourceUsage>,
 }
 
-pub fn run(
-    chroot_dir: Option<impl AsRef<path::Path>>,
-    program: impl AsRef<path::Path>,
-    input_file: impl AsRef<path::Path>,
-    output_file: impl AsRef<path::Path>,
-    time_limit: time::Duration,
-    memory_limit: usize,
-) -> nix::Result<RunnerReport> {
-    match nix::unistd::fork()? {
-        nix::unistd::ForkResult::Parent { child: pid } => {
-            let start_time = time::Instant::now();
+pub struct Runner {
+    program: PathBuf,
+    input_file: PathBuf,
+    output_file: PathBuf,
+    chroot: Option<PathBuf>,
+    cgroup: Option<Cgroup>,
+    seccomp: Option<ScmpCtx>,
+    resource_limit: Option<ResourceLimit>,
+}
 
-            let cg = cgroup::Cgroup::new(time_limit, memory_limit);
-            cg.add_process(pid);
-
-            thread::spawn(move || {
-                thread::sleep(time_limit * 2);
-                nix::sys::signal::kill(pid, nix::sys::signal::SIGKILL).unwrap_or_default();
-            });
-
-            let res = RunnerReport {
-                exit_success: match nix::sys::wait::waitpid(pid, None)? {
-                    nix::sys::wait::WaitStatus::Exited(_, code) => code == 0,
-                    nix::sys::wait::WaitStatus::Signaled(_, _, _) => false,
-                    _ => unreachable!("Should not appear other cases"),
-                },
-                real_time_usage: start_time.elapsed(),
-                cpu_time_usage: cg.get_cpu_time_usage(),
-                memory_usage: cg.get_memory_usage(),
-                tle_flag: cg.is_time_limit_exceeded(),
-                mle_flag: cg.is_memory_limit_exceeded(),
-            };
-            Ok(res)
+impl Runner {
+    pub fn new(
+        program: impl AsRef<Path>,
+        input_file: impl AsRef<Path>,
+        output_file: impl AsRef<Path>,
+    ) -> Runner {
+        Runner {
+            program: program.as_ref().to_owned(),
+            input_file: input_file.as_ref().to_owned(),
+            output_file: output_file.as_ref().to_owned(),
+            chroot: None,
+            cgroup: None,
+            seccomp: None,
+            resource_limit: None,
         }
+    }
 
-        nix::unistd::ForkResult::Child => {
-            // Replace stdio with files
-            let input_fd = fs::File::open(input_file)
-                .expect("Failed to open input file")
-                .into_raw_fd();
-            let output_fd = fs::File::create(output_file)
-                .expect("Failed to create output file")
-                .into_raw_fd();
-            nix::unistd::dup2(input_fd, io::stdin().as_raw_fd()).expect("Failed to dup stdin");
-            nix::unistd::dup2(output_fd, io::stdout().as_raw_fd()).expect("Failed to dup stdout");
-            nix::unistd::close(input_fd).expect("Failed to close input file");
-            nix::unistd::close(output_fd).expect("Failed to close output file");
+    pub fn chroot(mut self, chroot_path: impl AsRef<Path>) -> Runner {
+        self.chroot = Some(chroot_path.as_ref().to_owned());
+        self
+    }
 
-            // Unshare namespace
-            nix::sched::unshare(
-                nix::sched::CloneFlags::empty()
-                    | nix::sched::CloneFlags::CLONE_FILES
-                    | nix::sched::CloneFlags::CLONE_FS
-                    | nix::sched::CloneFlags::CLONE_NEWCGROUP
-                    | nix::sched::CloneFlags::CLONE_NEWIPC
-                    | nix::sched::CloneFlags::CLONE_NEWNET
-                    | nix::sched::CloneFlags::CLONE_NEWNS
-                    | nix::sched::CloneFlags::CLONE_NEWPID
-                    | nix::sched::CloneFlags::CLONE_NEWUSER
-                    | nix::sched::CloneFlags::CLONE_NEWUTS
-                    | nix::sched::CloneFlags::CLONE_SYSVSEM,
-            )
-            .expect("Failed to unshare namespace");
+    pub fn seccomp(mut self, seccomp: ScmpCtx) -> Runner {
+        self.seccomp = Some(seccomp);
+        self
+    }
 
-            // Chroot if needed
-            if let Some(chroot_dir) = chroot_dir {
-                nix::unistd::chroot(chroot_dir.as_ref()).expect("Failed to chroot");
+    pub fn cgroup(mut self, cgroup: Cgroup) -> Runner {
+        self.cgroup = Some(cgroup);
+        self
+    }
+
+    pub fn run(&self) -> Result<RunnerReport, Box<dyn Error>> {
+        match nix::unistd::fork()? {
+            nix::unistd::ForkResult::Parent { child } => self.start_parent(child),
+            nix::unistd::ForkResult::Child => {
+                self.start_child()?;
+                unreachable!("After fork and exec child process")
             }
-
-            // Change directory to root
-            nix::unistd::chdir("/").expect("Failed to chdir");
-
-            unsafe {
-                nix::libc::prctl(nix::libc::PR_SET_NO_NEW_PRIVS, 1);
-                nix::libc::prctl(nix::libc::PR_SET_DUMPABLE, 0);
-            }
-
-            // Change program to C-style string
-            let program_command =
-                ffi::CString::new(program.as_ref().as_os_str().as_bytes()).unwrap();
-
-            // Use seccomp to prevent some system calls
-            let scmp = seccomp::ScmpCtx::new(); // Default rule is kill
-            for syscall in &[
-                seccomp::syscall("access"),
-                seccomp::syscall("arch_prctl"),
-                seccomp::syscall("brk"),
-                seccomp::syscall("close"),
-                seccomp::syscall("exit_group"),
-                seccomp::syscall("fstat"),
-                seccomp::syscall("lseek"),
-                seccomp::syscall("mmap"),
-                seccomp::syscall("mprotect"),
-                seccomp::syscall("munmap"),
-                seccomp::syscall("read"),
-                seccomp::syscall("readlink"),
-                seccomp::syscall("sysinfo"),
-                seccomp::syscall("uname"),
-                seccomp::syscall("write"),
-                seccomp::syscall("writev"),
-            ] {
-                scmp.whitelist(*syscall as u32, Vec::new())
-                    .expect("Failed to add syscall to whitelist");
-            }
-
-            // Only allow exec program
-            scmp.whitelist(
-                seccomp::syscall("execve") as u32,
-                vec![seccomp::ScmpArg::new(
-                    0,
-                    seccomp::ScmpCmp::EQ,
-                    program_command.as_ptr() as u64,
-                )],
-            )
-            .expect("Failed to add execve to whitelist");
-            scmp.load().expect("Failed to set seccomp");
-
-            nix::unistd::execvpe(&program_command, &[program_command.clone()], &[])
-                .expect("Failed to exec child process");
-
-            unreachable!("Not reachable after exec")
         }
     }
 }
+
+impl Runner {
+    fn start_parent(&self, child: nix::unistd::Pid) -> Result<RunnerReport, Box<dyn Error>> {
+        let start_time = Instant::now();
+        if let Some(cg) = &self.cgroup {
+            cg.add_process(child)?;
+        }
+        if let Some(limit) = &self.resource_limit {
+            let time_limit = limit.time_limit;
+            thread::spawn(move || {
+                thread::sleep(time_limit * 2);
+                nix::sys::signal::kill(child, nix::sys::signal::SIGKILL).unwrap_or_default();
+            });
+        }
+        let exit_success = match nix::sys::wait::waitpid(child, None)? {
+            nix::sys::wait::WaitStatus::Exited(_, code) => code == 0,
+            nix::sys::wait::WaitStatus::Signaled(_, _, _) => false,
+            _ => unreachable!("Should not appear other cases"),
+        };
+        let resource_usage = match &self.cgroup {
+            Some(cg) => Some(ResourceUsage::new(
+                cg.cpu_usage()?,
+                start_time.elapsed(),
+                cg.memory_usage()?,
+            )),
+            None => None,
+        };
+        Ok(RunnerReport {
+            exit_success,
+            resource_usage,
+        })
+    }
+
+    fn start_child(&self) -> Result<(), Box<Error>> {
+        let input_fd = File::open(&self.input_file)?.into_raw_fd();
+        nix::unistd::dup2(input_fd, io::stdin().as_raw_fd())?;
+        nix::unistd::close(input_fd)?;
+
+        let output_fd = File::create(&self.output_file)?.into_raw_fd();
+        nix::unistd::dup2(output_fd, io::stdout().as_raw_fd())?;
+        nix::unistd::close(output_fd)?;
+
+        self.unshare_namespace()?;
+        nix::unistd::chdir("/")?;
+        if let Some(chroot_dir) = &self.chroot {
+            nix::unistd::chroot(chroot_dir.as_path())?;
+        }
+        let program_command = CString::new(self.program.as_os_str().as_bytes()).unwrap();
+        self.init_seccomp(program_command.as_ptr())?;
+        nix::unistd::execvpe(&program_command, &[program_command.clone()], &[])?;
+        unreachable!("Not reachable after exec")
+    }
+
+    fn unshare_namespace(&self) -> nix::Result<()> {
+        nix::sched::unshare(
+            nix::sched::CloneFlags::empty()
+                | nix::sched::CloneFlags::CLONE_FILES
+                | nix::sched::CloneFlags::CLONE_FS
+                | nix::sched::CloneFlags::CLONE_NEWCGROUP
+                | nix::sched::CloneFlags::CLONE_NEWIPC
+                | nix::sched::CloneFlags::CLONE_NEWNET
+                | nix::sched::CloneFlags::CLONE_NEWNS
+                | nix::sched::CloneFlags::CLONE_NEWPID
+                | nix::sched::CloneFlags::CLONE_NEWUSER
+                | nix::sched::CloneFlags::CLONE_NEWUTS
+                | nix::sched::CloneFlags::CLONE_SYSVSEM,
+        )
+    }
+
+    fn init_seccomp(&self, program_ptr: *const i8) -> Result<(), Box<dyn Error>> {
+        if let Some(scmp) = &self.seccomp {
+            scmp.whitelist(seccomp::syscall_resolve_name("execve").unwrap(), {
+                let mut pattern = seccomp::Pattern::new();
+                pattern.add_arg(seccomp::CmpOp::EQ, program_ptr as i64);
+                pattern
+            })?;
+            scmp.load()?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests;
