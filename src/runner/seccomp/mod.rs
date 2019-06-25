@@ -118,10 +118,10 @@ impl Default for Pattern {
 pub enum Act {
     Kill = SCMP_ACT_KILL,
     // KillProcess = SCMP_ACT_KILL_PROCESS,
-    Trap = SCMP_ACT_TRAP,
+    // Trap = SCMP_ACT_TRAP,
     // Errno = SCMP_ACT_ERRNO,
     // Trace = SCMP_ACT_TRACE,
-    Log = SCMP_ACT_LOG,
+    // Log = SCMP_ACT_LOG,
     Allow = SCMP_ACT_ALLOW,
 }
 
