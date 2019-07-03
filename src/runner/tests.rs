@@ -46,9 +46,9 @@ fn test_runner_with_cgroup() -> io::Result<()> {
     assert!(report.exit_success);
     assert!(report.resource_usage.is_some());
     let resource_usage = report.resource_usage.unwrap();
-    assert_ne!(resource_usage.cpu_time_usage, Duration::from_secs(0));
-    assert_ne!(resource_usage.real_time_usage, Duration::from_secs(0));
-    assert_ne!(resource_usage.memory_usage, 0);
+    assert_ne!(resource_usage.cpu_time, Duration::from_secs(0));
+    assert_ne!(resource_usage.real_time, Duration::from_secs(0));
+    assert_ne!(resource_usage.memory, 0);
     assert_eq!(fs::read(&output_file)?, ANSWER_CONTENT.as_bytes());
     Ok(())
 }

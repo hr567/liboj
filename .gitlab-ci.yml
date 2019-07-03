@@ -1,5 +1,5 @@
 stages:
-- build
+- test
 - deploy
 
 before_script:
@@ -16,16 +16,14 @@ variables:
   RUST_BACKTRACE: 1
 
 stable:
-  stage: build
+  stage: test
   image: rust:latest
   script:
-  - cargo build --verbose
   - cargo test --verbose
 
 nightly:
-  stage: build
+  stage: test
   image: rustlang/rust:nightly
   script:
-  - cargo build --verbose
-  - cargo test --verbose
+  - cargo test
   allow_failure: true

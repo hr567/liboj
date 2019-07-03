@@ -14,7 +14,7 @@ use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use std::os::unix::{
     ffi::OsStrExt as _,
@@ -23,7 +23,7 @@ use std::os::unix::{
 
 use nix;
 
-use crate::structures::{ResourceLimit, ResourceUsage};
+use crate::structures::Resource;
 
 /// Report of the program
 #[derive(Debug)]
@@ -33,7 +33,7 @@ pub struct RunnerReport {
     pub exit_success: bool,
 
     /// time the program use in real world
-    pub resource_usage: Option<ResourceUsage>,
+    pub resource_usage: Option<Resource>,
 }
 
 pub struct Runner {
@@ -43,7 +43,7 @@ pub struct Runner {
     chroot: Option<PathBuf>,
     cgroup: Option<Cgroup>,
     seccomp: Option<ScmpCtx>,
-    resource_limit: Option<ResourceLimit>,
+    resource_limit: Option<Resource>,
 }
 
 impl Runner {
@@ -96,11 +96,13 @@ impl Runner {
             cg.add_process(child)?;
         }
         if let Some(limit) = &self.resource_limit {
-            let time_limit = limit.time_limit;
-            thread::spawn(move || {
-                thread::sleep(time_limit * 2);
-                nix::sys::signal::kill(child, nix::sys::signal::SIGKILL).unwrap_or_default();
-            });
+            let time_limit = limit.real_time;
+            if time_limit != Duration::from_secs(0) {
+                thread::spawn(move || {
+                    thread::sleep(time_limit);
+                    nix::sys::signal::kill(child, nix::sys::signal::SIGKILL).unwrap_or_default();
+                });
+            }
         }
         let exit_success = match nix::sys::wait::waitpid(child, None)? {
             nix::sys::wait::WaitStatus::Exited(_, code) => code == 0,
@@ -108,7 +110,7 @@ impl Runner {
             _ => unreachable!("Should not appear other cases"),
         };
         let resource_usage = match &self.cgroup {
-            Some(cg) => Some(ResourceUsage::new(
+            Some(cg) => Some(Resource::new(
                 cg.cpu_usage()?,
                 start_time.elapsed(),
                 cg.memory_usage()?,

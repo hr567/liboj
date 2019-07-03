@@ -8,12 +8,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum Problem {
     Normal {
-        limit: ResourceLimit,
-        test_cases: Vec<TestCase>,
+        limit: Resource,
+        cases: Vec<TestCase>,
     },
     Special {
-        limit: ResourceLimit,
-        test_cases: Vec<TestCase>,
+        limit: Resource,
+        cases: Vec<TestCase>,
         spj: Source,
     },
 }
@@ -23,8 +23,8 @@ impl Problem {
     pub fn len(&self) -> usize {
         use Problem::*;
         match self {
-            Normal { test_cases, .. } => test_cases.len(),
-            Special { test_cases, .. } => test_cases.len(),
+            Normal { cases, .. } => cases.len(),
+            Special { cases, .. } => cases.len(),
         }
     }
 
@@ -62,10 +62,10 @@ pub struct Source {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum Report {
     Accepted {
-        resource_usage: ResourceUsage,
+        resource_usage: Resource,
     },
     WrongAnswer {
-        resource_usage: ResourceUsage,
+        resource_usage: Resource,
         message: String,
     },
     TimeLimitExceeded,
@@ -119,49 +119,29 @@ impl Display for Report {
     }
 }
 
-/// Resource usage of the judged program.
+/// Definition of resource.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct ResourceUsage {
-    pub cpu_time_usage: Duration,
-    pub real_time_usage: Duration,
-    pub memory_usage: usize, // in bytes
+pub struct Resource {
+    pub cpu_time: Duration,
+    pub real_time: Duration,
+    pub memory: usize, // in bytes
 }
 
-impl ResourceUsage {
-    pub fn new(
-        cpu_time_usage: Duration,
-        real_time_usage: Duration,
-        memory_usage: usize,
-    ) -> ResourceUsage {
-        ResourceUsage {
-            cpu_time_usage,
-            real_time_usage,
-            memory_usage,
+impl Resource {
+    pub fn new(cpu_time: Duration, real_time: Duration, memory: usize) -> Resource {
+        Resource {
+            real_time,
+            cpu_time,
+            memory,
         }
     }
 }
 
-impl Display for ResourceUsage {
+impl Display for Resource {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "CPU time usage: {}", self.cpu_time_usage.as_nanos())?;
-        writeln!(f, "Real time usage: {}", self.real_time_usage.as_nanos())?;
-        writeln!(f, "Memory usage: {}", self.memory_usage)?;
+        writeln!(f, "Real Time: {}", self.real_time.as_nanos())?;
+        writeln!(f, "CPU Time: {}", self.cpu_time.as_nanos())?;
+        writeln!(f, "Memory: {}", self.memory)?;
         Ok(())
-    }
-}
-
-/// Resource limit of the judged program.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct ResourceLimit {
-    pub time_limit: Duration,
-    pub memory_limit: usize, // in bytes
-}
-
-impl ResourceLimit {
-    pub fn new(time_limit: Duration, memory_limit: usize) -> ResourceLimit {
-        ResourceLimit {
-            time_limit,
-            memory_limit,
-        }
     }
 }
