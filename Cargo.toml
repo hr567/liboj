@@ -1,6 +1,6 @@
 [package]
 name = "liboj"
-version = "0.2.0-alpha.2"
+version = "0.2.0-alpha.3"
 description = "A high performance framework for building online judge system"
 authors = ["hr567 <hr567@hr567.me>"]
 readme = "README.md"
@@ -30,4 +30,3 @@ gxx = []
 
 [badges]
 gitlab = { repository = "https://gitlab.com/hr567/liboj", branch = "master" }
-# codecov = { repository = "https://gitlab.com/hr567/liboj", branch = "master", service = "github" }

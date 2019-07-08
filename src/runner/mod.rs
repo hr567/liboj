@@ -78,6 +78,11 @@ impl Runner {
         self
     }
 
+    pub fn resource_limit(mut self, limit: Resource) -> Runner {
+        self.resource_limit = Some(limit);
+        self
+    }
+
     pub fn run(&self) -> Result<RunnerReport, Box<dyn Error>> {
         match nix::unistd::fork()? {
             nix::unistd::ForkResult::Parent { child } => self.start_parent(child),
