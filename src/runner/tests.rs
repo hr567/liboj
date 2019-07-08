@@ -29,7 +29,6 @@ fn test_basic_runner() -> io::Result<()> {
         .run()
         .unwrap();
     assert!(report.exit_success);
-    assert!(report.resource_usage.is_none());
     assert_eq!(fs::read(&output_file)?, ANSWER_CONTENT.as_bytes());
     Ok(())
 }
@@ -44,8 +43,7 @@ fn test_runner_with_cgroup() -> io::Result<()> {
         .run()
         .unwrap();
     assert!(report.exit_success);
-    assert!(report.resource_usage.is_some());
-    let resource_usage = report.resource_usage.unwrap();
+    let resource_usage = report.resource_usage;
     assert_ne!(resource_usage.cpu_time, Duration::from_secs(0));
     assert_ne!(resource_usage.real_time, Duration::from_secs(0));
     assert_ne!(resource_usage.memory, 0);
@@ -62,7 +60,6 @@ fn test_runner_with_chroot() -> io::Result<()> {
         .run()
         .unwrap();
     assert!(report.exit_success);
-    assert!(report.resource_usage.is_none());
     assert_eq!(fs::read(&output_file)?, ANSWER_CONTENT.as_bytes());
     Ok(())
 }

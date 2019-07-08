@@ -4,8 +4,8 @@
 mod cgroup;
 mod seccomp;
 
-use cgroup::*;
-use seccomp::*;
+pub use cgroup::*;
+pub use seccomp::*;
 
 // use std::borrow::ToOwned;
 use std::error::Error;
@@ -33,15 +33,15 @@ pub struct RunnerReport {
     pub exit_success: bool,
 
     /// time the program use in real world
-    pub resource_usage: Option<Resource>,
+    pub resource_usage: Resource,
 }
 
 pub struct Runner {
     program: PathBuf,
     input_file: PathBuf,
     output_file: PathBuf,
+    cgroup: Cgroup,
     chroot: Option<PathBuf>,
-    cgroup: Option<Cgroup>,
     seccomp: Option<ScmpCtx>,
     resource_limit: Option<Resource>,
 }
@@ -56,8 +56,8 @@ impl Runner {
             program: program.as_ref().to_owned(),
             input_file: input_file.as_ref().to_owned(),
             output_file: output_file.as_ref().to_owned(),
+            cgroup: Cgroup::default(),
             chroot: None,
-            cgroup: None,
             seccomp: None,
             resource_limit: None,
         }
@@ -74,12 +74,17 @@ impl Runner {
     }
 
     pub fn cgroup(mut self, cgroup: Cgroup) -> Runner {
-        self.cgroup = Some(cgroup);
+        self.cgroup = cgroup;
         self
     }
 
     pub fn resource_limit(mut self, limit: Resource) -> Runner {
-        self.resource_limit = Some(limit);
+        if limit.real_time > Duration::from_secs(0)
+            && limit.cpu_time > Duration::from_secs(0)
+            && limit.memory > 0
+        {
+            self.resource_limit = Some(limit);
+        }
         self
     }
 
@@ -97,9 +102,7 @@ impl Runner {
 impl Runner {
     fn start_parent(&self, child: nix::unistd::Pid) -> Result<RunnerReport, Box<dyn Error>> {
         let start_time = Instant::now();
-        if let Some(cg) = &self.cgroup {
-            cg.add_process(child)?;
-        }
+        self.cgroup.add_process(child)?;
         if let Some(limit) = &self.resource_limit {
             let time_limit = limit.real_time;
             if time_limit != Duration::from_secs(0) {
@@ -114,14 +117,11 @@ impl Runner {
             nix::sys::wait::WaitStatus::Signaled(_, _, _) => false,
             _ => unreachable!("Should not appear other cases"),
         };
-        let resource_usage = match &self.cgroup {
-            Some(cg) => Some(Resource::new(
-                cg.cpu_usage()?,
-                start_time.elapsed(),
-                cg.memory_usage()?,
-            )),
-            None => None,
-        };
+        let resource_usage = Resource::new(
+            self.cgroup.cpu_usage()?,
+            start_time.elapsed(),
+            self.cgroup.memory_usage()?,
+        );
         Ok(RunnerReport {
             exit_success,
             resource_usage,

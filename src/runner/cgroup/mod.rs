@@ -14,6 +14,7 @@ pub struct Cgroup {
     name: String,
     controllers: HashSet<Controller>,
 }
+
 impl Cgroup {
     pub fn new() -> Cgroup {
         let name = uuid::Uuid::new_v4();
