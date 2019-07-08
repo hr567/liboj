@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 /// Definition of some common problem types.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Problem {
     Normal {
         limit: Resource,
@@ -35,7 +35,7 @@ impl Problem {
 }
 
 /// Basic judge task.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Task {
     pub source: Source,
     pub problem: Problem,
@@ -43,7 +43,7 @@ pub struct Task {
 
 /// Basic test case.
 /// Only include a input content and a answer content.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TestCase {
     pub input: String,
     pub answer: String,
@@ -52,14 +52,14 @@ pub struct TestCase {
 /// Basic source with the language and code.
 ///
 /// The language is usually formatted into "{suffix}.{compiler}"
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Source {
     pub language: String,
     pub code: String,
 }
 
 /// Definition of all kinds of judge report.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Report {
     Accepted {
         resource_usage: Resource,
@@ -120,7 +120,7 @@ impl Display for Report {
 }
 
 /// Definition of resource.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Resource {
     pub cpu_time: Duration,
     pub real_time: Duration,
