@@ -105,12 +105,13 @@ impl Runner {
         self.cgroup.add_process(child)?;
         if let Some(limit) = &self.resource_limit {
             let time_limit = limit.real_time;
-            if time_limit != Duration::from_secs(0) {
-                thread::spawn(move || {
-                    thread::sleep(time_limit);
-                    nix::sys::signal::kill(child, nix::sys::signal::SIGKILL).unwrap_or_default();
-                });
-            }
+            thread::spawn(move || {
+                thread::sleep(time_limit);
+                nix::sys::signal::kill(child, nix::sys::signal::SIGKILL).unwrap_or_default();
+            });
+            self.cgroup.set_cpu_period(limit.real_time)?;
+            self.cgroup.set_cpu_quota(limit.cpu_time)?;
+            self.cgroup.set_memory_limit(limit.memory)?;
         }
         let exit_success = match nix::sys::wait::waitpid(child, None)? {
             nix::sys::wait::WaitStatus::Exited(_, code) => code == 0,
