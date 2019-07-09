@@ -2,10 +2,15 @@
 use std::fmt::{self, Display};
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+/// Basic judge task.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Task {
+    pub source: Source,
+    pub problem: Problem,
+}
 
 /// Definition of some common problem types.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Problem {
     Normal {
         limit: Resource,
@@ -34,16 +39,10 @@ impl Problem {
     }
 }
 
-/// Basic judge task.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Task {
-    pub source: Source,
-    pub problem: Problem,
-}
-
 /// Basic test case.
+///
 /// Only include a input content and a answer content.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TestCase {
     pub input: String,
     pub answer: String,
@@ -52,33 +51,22 @@ pub struct TestCase {
 /// Basic source with the language and code.
 ///
 /// The language is usually formatted into "{suffix}.{compiler}"
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Source {
     pub language: String,
     pub code: String,
 }
 
 /// Definition of all kinds of judge report.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Report {
-    Accepted {
-        resource_usage: Resource,
-    },
-    WrongAnswer {
-        resource_usage: Resource,
-        message: String,
-    },
+    Accepted { resource_usage: Resource },
+    WrongAnswer,
     TimeLimitExceeded,
     MemoryLimitExceeded,
-    RuntimeError {
-        message: String,
-    },
-    CompileError {
-        message: String,
-    },
-    SystemError {
-        message: String,
-    },
+    RuntimeError,
+    CompileError,
+    SystemError,
 }
 
 impl Display for Report {
@@ -88,13 +76,8 @@ impl Display for Report {
                 writeln!(f, "Accepted:")?;
                 writeln!(f, "{}", resource_usage)?;
             }
-            Report::WrongAnswer {
-                resource_usage,
-                message,
-            } => {
-                writeln!(f, "Wrong Answer:")?;
-                writeln!(f, "{}", resource_usage)?;
-                writeln!(f, "Message: {}", message)?;
+            Report::WrongAnswer => {
+                writeln!(f, "Wrong Answer")?;
             }
             Report::TimeLimitExceeded => {
                 writeln!(f, "Time Limit Exceeded")?;
@@ -102,17 +85,14 @@ impl Display for Report {
             Report::MemoryLimitExceeded => {
                 writeln!(f, "Memory Limit Exceeded")?;
             }
-            Report::RuntimeError { message } => {
-                writeln!(f, "Runtime Error:")?;
-                writeln!(f, "Message: {}", message)?;
+            Report::RuntimeError => {
+                writeln!(f, "Runtime Error")?;
             }
-            Report::CompileError { message } => {
-                writeln!(f, "Compile Error:")?;
-                writeln!(f, "Message: {}", message)?;
+            Report::CompileError => {
+                writeln!(f, "Compile Error")?;
             }
-            Report::SystemError { message } => {
-                writeln!(f, "System Error:")?;
-                writeln!(f, "Message: {}", message)?;
+            Report::SystemError => {
+                writeln!(f, "System Error")?;
             }
         }
         Ok(())
@@ -120,7 +100,7 @@ impl Display for Report {
 }
 
 /// Definition of resource.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Resource {
     pub cpu_time: Duration,
     pub real_time: Duration,

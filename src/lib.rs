@@ -7,3 +7,7 @@ pub mod compiler;
 pub mod runner;
 /// Structures definitions.
 pub mod structures;
+
+pub use checker::Checker;
+pub use compiler::Compiler;
+pub use structures::*;

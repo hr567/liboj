@@ -1,6 +1,7 @@
 //! Interface for different compilers.
 use crate::structures::Source;
 
+#[cfg(test)]
 mod backends;
 
 use std::error::Error;
@@ -50,8 +51,9 @@ impl Compiler {
     /// Or return `None` if the language is not support,
     /// `Some(Err)` if the configuration is unavailable
     fn load_config(language: &str) -> Option<Result<Config, Box<dyn Error>>> {
-        let json_file = Path::new("src")
-            .join("compiler")
+        let json_file = Path::new(file!())
+            .parent()
+            .unwrap()
             .join("backends")
             .join(format!("{}.json", language));
         if !json_file.exists() {
