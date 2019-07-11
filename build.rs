@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 use std::env;
-use std::fs::read_dir;
-use std::fs::read_to_string;
-use std::fs::File;
-use std::io::prelude::*;
+use std::fs::{read_dir, read_to_string, File};
 use std::path::PathBuf;
 
 use bindgen;
@@ -33,7 +30,7 @@ fn generate_seccomp_binding() {
         .generate()
         .expect("Failed to generate seccomp bindings")
         .write_to_file(OUT_DIR.join("seccomp_wrapper.rs"))
-        .expect("Failed to write to seccomp wrapper file");
+        .unwrap();
 }
 
 fn generate_compiler_backends() {
