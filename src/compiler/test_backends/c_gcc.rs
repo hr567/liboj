@@ -11,7 +11,7 @@ fn test_c_gcc_compile() -> io::Result<()> {
         language: String::from("c.gcc"),
         code: String::from("#include<stdio.h>\nint main() { return 0; }"),
     };
-    let compiler = Compiler::new(&source.language).unwrap().unwrap();
+    let compiler = Compiler::new(&source.language).unwrap();
     let executable_file = tempfile::NamedTempFile::new()?.into_temp_path();
     let compile_success = compiler.compile(&source, &executable_file)?;
     assert!(compile_success);
@@ -24,7 +24,7 @@ fn test_c_gcc_compile_failed() -> io::Result<()> {
         language: String::from("c.gcc"),
         code: String::from("#include<stdio.h>\nint main() { return 0 }"),
     };
-    let compiler = Compiler::new(&source.language).unwrap().unwrap();
+    let compiler = Compiler::new(&source.language).unwrap();
     let executable_file = tempfile::NamedTempFile::new()?.into_temp_path();
     let compile_success = compiler.compile(&source, &executable_file)?;
     assert!(!compile_success);

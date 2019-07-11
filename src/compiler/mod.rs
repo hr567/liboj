@@ -1,18 +1,37 @@
 //! Interface for different compilers.
-use crate::structures::Source;
-
 #[cfg(test)]
-mod backends;
+mod test_backends {
+    //! Supported compilers.
+    #[cfg(feature = "gcc")]
+    mod c_gcc;
 
-use std::error::Error;
+    #[cfg(feature = "gxx")]
+    mod cpp_gxx;
+}
+
+mod backends {
+    use std::collections::HashMap;
+
+    use lazy_static::lazy_static;
+    use serde_json;
+
+    const CONFIG_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/compiler_backends.json"));
+
+    lazy_static! {
+        pub static ref COMPILERS: HashMap<String, String> =
+            { serde_json::from_str(CONFIG_JSON).unwrap() };
+    }
+}
+
 use std::ffi::OsString;
-use std::fs::File;
 use std::io::{self, prelude::*};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+use crate::structures::Source;
+use backends::COMPILERS as compilers;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
@@ -37,39 +56,17 @@ impl Compiler {
     ///
     /// Return an 'Err` if there is a configuration for the `language`
     /// but the configuration is unavailable or there is an io error.
-    pub fn new(language: &str) -> Option<Result<Compiler, Box<dyn Error>>> {
-        let config: Config = match Compiler::load_config(language) {
-            Some(Ok(config)) => config,
-            Some(Err(e)) => return Some(Err(e)),
-            None => return None,
-        };
-
-        Some(Ok(config.into()))
+    pub fn new(language: &str) -> Option<Compiler> {
+        let config: Config = Compiler::load_config(language)?;
+        Some(config.into())
     }
 
     /// Return configuration for `language`.
     /// Or return `None` if the language is not support,
     /// `Some(Err)` if the configuration is unavailable
-    fn load_config(language: &str) -> Option<Result<Config, Box<dyn Error>>> {
-        let json_file = Path::new(file!())
-            .parent()
-            .unwrap()
-            .join("backends")
-            .join(format!("{}.json", language));
-        if !json_file.exists() {
-            return None;
-        }
-        let json_file = match File::open(&json_file) {
-            Ok(file) => file,
-            Err(e) => return Some(Err(Box::new(e))),
-        };
-
-        let config: Config = match serde_json::from_reader(json_file) {
-            Ok(config) => config,
-            Err(e) => return Some(Err(Box::new(e))),
-        };
-
-        Some(Ok(config))
+    fn load_config(language: &str) -> Option<Config> {
+        let config_json = compilers.get(language)?;
+        Some(serde_json::from_str(&config_json).unwrap())
     }
 
     /// Compile `source` to `executable_file`.
