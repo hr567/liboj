@@ -3,8 +3,10 @@ use std::env;
 use std::fs::{read_dir, read_to_string, File};
 use std::path::PathBuf;
 
+use bincode;
 use bindgen;
 use lazy_static::lazy_static;
+use serde::{Deserialize, Serialize};
 use serde_json;
 
 lazy_static! {
@@ -33,9 +35,17 @@ fn generate_seccomp_binding() {
         .unwrap();
 }
 
+#[derive(Serialize, Deserialize)]
+struct Config {
+    suffix: String,
+    command: String,
+    args: Vec<String>,
+    timeout: u64,
+}
+
 fn generate_compiler_backends() {
     let backends_dir = ROOT_DIR.join("src/compiler/backends");
-    let mut backends: HashMap<String, String> = HashMap::new();
+    let mut backends: HashMap<String, Config> = HashMap::new();
     read_dir(&backends_dir)
         .unwrap()
         .map(|entry| entry.unwrap())
@@ -47,9 +57,10 @@ fn generate_compiler_backends() {
                 .unwrap()
                 .trim_end_matches(".json")
                 .to_owned();
+            let config: Config = serde_json::from_str(&config)
+                .expect(&format!("Configuration file {} is unavailable", &language));
             backends.insert(language, config);
         });
-    let backends_json = OUT_DIR.join("compiler_backends.json");
-    let backends_file = File::create(backends_json).unwrap();
-    serde_json::to_writer(backends_file, &backends).unwrap();
+    let backends_file = File::create(OUT_DIR.join("compiler_backends")).unwrap();
+    bincode::serialize_into(backends_file, &backends).unwrap();
 }

@@ -10,16 +10,38 @@ mod test_backends {
 }
 
 mod backends {
+    use super::Compiler;
+
     use std::collections::HashMap;
+    use std::time::Duration;
 
+    use bincode;
     use lazy_static::lazy_static;
-    use serde_json;
+    use serde::{Deserialize, Serialize};
 
-    const CONFIG_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/compiler_backends.json"));
+    /// A helper structures for building compiler.
+    #[derive(Serialize, Deserialize)]
+    struct Config {
+        suffix: String,
+        command: String,
+        args: Vec<String>,
+        timeout: u64,
+    }
+
+    const CONFIG_FILE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/compiler_backends"));
 
     lazy_static! {
-        pub static ref COMPILERS: HashMap<String, String> =
-            { serde_json::from_str(CONFIG_JSON).unwrap() };
+        static ref COMPILERS: HashMap<String, Config> = { bincode::deserialize(CONFIG_FILE).unwrap() };
+    }
+
+    pub fn from_language(language: &str) -> Option<Compiler> {
+        let config = COMPILERS.get(language)?;
+        Some(Compiler {
+            suffix: &config.suffix,
+            command: &config.command,
+            args: &config.args,
+            timeout: Duration::from_secs(config.timeout),
+        })
     }
 }
 
@@ -31,18 +53,16 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use crate::structures::Source;
-use backends::COMPILERS as compilers;
-use serde::{Deserialize, Serialize};
-use serde_json;
+use backends::from_language;
 
 /// A simple compiler interface for compile a single file to a executable file.
 pub struct Compiler {
     /// Suffix which source file should be used.
-    suffix: String,
+    suffix: &'static str,
     /// Command of the compiler in system.
-    command: String,
+    command: &'static str,
     /// Arguments of the compiler.
-    args: Vec<String>,
+    args: &'static Vec<String>,
     /// Timeout of the compiler.
     timeout: Duration,
 }
@@ -57,16 +77,7 @@ impl Compiler {
     /// Return an 'Err` if there is a configuration for the `language`
     /// but the configuration is unavailable or there is an io error.
     pub fn new(language: &str) -> Option<Compiler> {
-        let config: Config = Compiler::load_config(language)?;
-        Some(config.into())
-    }
-
-    /// Return configuration for `language`.
-    /// Or return `None` if the language is not support,
-    /// `Some(Err)` if the configuration is unavailable
-    fn load_config(language: &str) -> Option<Config> {
-        let config_json = compilers.get(language)?;
-        Some(serde_json::from_str(&config_json).unwrap())
+        from_language(language)
     }
 
     /// Compile `source` to `executable_file`.
@@ -111,32 +122,5 @@ impl Compiler {
         };
 
         Ok(result.success())
-    }
-}
-
-/// A helper structures for compiler configuration.
-#[derive(Serialize, Deserialize)]
-struct Config {
-    suffix: String,
-    command: String,
-    args: Vec<String>,
-    timeout: u64,
-}
-
-impl Into<Compiler> for Config {
-    fn into(self) -> Compiler {
-        let Config {
-            suffix,
-            command,
-            args,
-            timeout,
-        } = self;
-
-        Compiler {
-            suffix,
-            command,
-            args,
-            timeout: Duration::from_secs(timeout),
-        }
     }
 }
