@@ -1,146 +1,112 @@
 //! Reduced high-level APIs for cgroup.
 mod controller;
-pub use controller::*;
+mod hierarchy;
 
-use std::collections::HashSet;
-use std::fs;
+use std::fs::remove_dir;
 use std::io;
-use std::path::PathBuf;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
 
-use nix;
+use nix::unistd::Pid;
+use uuid::Uuid;
 
-pub struct Cgroup {
+pub use controller::*;
+pub use hierarchy::*;
+
+/// Provide the root path of a cgroup.
+pub trait CgroupRoot {
+    fn root() -> &'static Path;
+}
+
+/// Cgroup context.
+#[derive(Debug, Clone)]
+pub struct Context {
     name: String,
-    controllers: HashSet<Controller>,
 }
 
-impl Cgroup {
-    pub fn new() -> Cgroup {
-        let name = uuid::Uuid::new_v4();
-        Cgroup {
-            name: name.to_string(),
-            controllers: HashSet::new(),
+impl Context {
+    /// Create a new cgroup context with a random UUID as its name.
+    pub fn new() -> Context {
+        Context::default()
+    }
+
+    /// Create a new cgroup context with a given name.
+    pub fn with_name(name: &str) -> Context {
+        Context {
+            name: name.to_owned(),
         }
     }
 
-    fn cgroup_path(&self, controller: Controller) -> Option<PathBuf> {
-        if !self.controllers.contains(&controller) {
-            return None;
-        }
-        Some(controller.cgroup_path().join(&self.name))
+    /// Get the cpu controller.
+    ///
+    /// The controller must be initialized before read or write to it.
+    pub fn cpu_controller(&self) -> CpuController<PathBuf> {
+        CpuController::from_ctx(&self)
     }
 
-    pub fn add_controller(&mut self, controller: Controller) -> io::Result<()> {
-        if !self.controllers.contains(&controller) {
-            self.controllers.insert(controller);
-            fs::create_dir(self.cgroup_path(controller).unwrap())?;
+    /// Get the cpuacct controller.
+    ///
+    /// The controller must be initialized before read or write to it.
+    pub fn cpuacct_controller(&self) -> CpuAcctController<PathBuf> {
+        CpuAcctController::from_ctx(&self)
+    }
+
+    /// Get the cpuacct controller.
+    ///
+    /// The controller must be initialized before read or write to it.
+    pub fn memory_controller(&self) -> MemoryController<PathBuf> {
+        MemoryController::from_ctx(&self)
+    }
+
+    /// Add a process to the context.
+    pub fn add_process(&self, pid: Pid) -> io::Result<()> {
+        for hierarchy in self.hierarchies() {
+            hierarchy.procs().write(&pid)?;
         }
         Ok(())
     }
 
-    pub fn add_process(&self, pid: nix::unistd::Pid) -> io::Result<()> {
-        for controller in self.controllers.iter() {
-            fs::write(
-                self.cgroup_path(*controller).unwrap().join("cgroup.procs"),
-                pid.to_string(),
-            )?;
+    /// Add a task(thread) to the context.
+    pub fn add_task(&self, pid: Pid) -> io::Result<()> {
+        for hierarchy in self.hierarchies() {
+            hierarchy.tasks().write(&pid)?;
         }
         Ok(())
     }
 }
 
-impl Default for Cgroup {
-    fn default() -> Cgroup {
-        let mut cg = Cgroup::new();
-        cg.add_controller(Controller::Cpu)
-            .expect("Failed to add cpu controller");
-        cg.add_controller(Controller::Memory)
-            .expect("Failed to add memory controller");
-        cg
+impl Context {
+    /// All hierarchies that this cgroup context contains.
+    fn hierarchies<'a>(&'a self) -> impl Iterator<Item = Box<dyn 'a + Hierarchy>> {
+        let mut res: Vec<Box<dyn Hierarchy>> = Vec::new();
+        if self.cpu_controller().is_initialized() {
+            res.push(Box::new(self.cpu_controller()));
+        }
+        if self.cpuacct_controller().is_initialized() {
+            res.push(Box::new(self.cpuacct_controller()));
+        }
+        if self.memory_controller().is_initialized() {
+            res.push(Box::new(self.memory_controller()));
+        }
+        res.into_iter()
     }
 }
 
-impl Cpu for Cgroup {
-    fn cpu_usage(&self) -> io::Result<Duration> {
-        let buf = fs::read(
-            &self
-                .cgroup_path(Controller::Cpu)
-                .expect("Cpu controller is not exist")
-                .join("cpuacct.usage"),
-        )?;
-        let time_ns = String::from_utf8(buf).unwrap().trim().parse().unwrap();
-        Ok(Duration::from_nanos(time_ns))
-    }
-
-    fn set_cpu_period(&self, period: Duration) -> io::Result<()> {
-        fs::write(
-            &self
-                .cgroup_path(Controller::Cpu)
-                .expect("Cpu controller is not exist")
-                .join("cpu.cfs_period_us"),
-            period.as_micros().to_string(),
-        )
-    }
-
-    fn set_cpu_quota(&self, quota: Duration) -> io::Result<()> {
-        fs::write(
-            &self
-                .cgroup_path(Controller::Cpu)
-                .expect("Cpu controller is not exist")
-                .join("cpu.cfs_quota_us"),
-            quota.as_micros().to_string(),
-        )
+impl CgroupRoot for Context {
+    fn root() -> &'static Path {
+        Path::new("/sys/fs/cgroup/")
     }
 }
 
-impl Memory for Cgroup {
-    fn memory_usage(&self) -> io::Result<usize> {
-        let buf = fs::read(
-            &self
-                .cgroup_path(Controller::Memory)
-                .expect("Memory controller is not exist")
-                .join("memory.max_usage_in_bytes"),
-        )?;
-        Ok(String::from_utf8(buf).unwrap().trim().parse().unwrap())
-    }
-
-    fn set_memory_limit(&self, limit: usize) -> io::Result<()> {
-        fs::write(
-            &self
-                .cgroup_path(Controller::Memory)
-                .expect("Memory controller is not exist")
-                .join("memory.limit_in_bytes"),
-            limit.to_string(),
-        )
-    }
-
-    fn set_swappiness(&self, flag: bool) -> io::Result<()> {
-        fs::write(
-            &self
-                .cgroup_path(Controller::Memory)
-                .expect("Memory controller is not exist")
-                .join("memory.swappiness"),
-            flag.to_string(),
-        )
-    }
-
-    fn memory_failcnt(&self) -> io::Result<usize> {
-        let buf = fs::read(
-            &self
-                .cgroup_path(Controller::Memory)
-                .expect("Memory controller is not exist")
-                .join("memory.failcnt"),
-        )?;
-        Ok(String::from_utf8(buf).unwrap().trim().parse().unwrap())
+impl Default for Context {
+    fn default() -> Context {
+        Context::with_name(&Uuid::new_v4().to_string())
     }
 }
 
-impl Drop for Cgroup {
+impl Drop for Context {
     fn drop(&mut self) {
-        for controller in self.controllers.iter() {
-            fs::remove_dir(self.cgroup_path(*controller).unwrap())
-                .expect("Failed to remove cgroup hierarchy");
+        for hierarchy in self.hierarchies() {
+            let _ = remove_dir(hierarchy.path());
         }
     }
 }
@@ -150,106 +116,86 @@ mod tests {
     use super::*;
 
     use std::iter::FromIterator;
+    use std::time::Duration;
 
     #[test]
     fn test_cgroup_path() {
-        let ctx = Cgroup::default();
+        let ctx = Context::new();
 
-        let cpu_cgroup = ctx.cgroup_path(Controller::Cpu).unwrap();
-        assert_eq!(cpu_cgroup, Controller::Cpu.cgroup_path().join(&ctx.name));
+        let cpu_controller = ctx.cpu_controller();
+        cpu_controller.initialize().unwrap();
+        let cpu_path = cpu_controller.as_ref();
+        assert!(cpu_path.exists());
         assert_eq!(
-            cpu_cgroup,
+            cpu_path,
             PathBuf::from_iter(&["/sys/fs/cgroup/cpu/", ctx.name.as_str()])
         );
-        assert!(cpu_cgroup.exists());
 
-        let memory_cgroup = ctx.cgroup_path(Controller::Memory).unwrap();
+        let cpuacct_controller = ctx.cpuacct_controller();
+        cpuacct_controller.initialize().unwrap();
+        let cpuact_path = cpuacct_controller.as_ref();
+        assert!(cpuact_path.exists());
         assert_eq!(
-            memory_cgroup,
-            Controller::Memory.cgroup_path().join(&ctx.name)
+            cpuact_path,
+            PathBuf::from_iter(&["/sys/fs/cgroup/cpuacct/", ctx.name.as_str()])
         );
+
+        let memory_controller = ctx.memory_controller();
+        memory_controller.initialize().unwrap();
+        let memory_path = memory_controller.as_ref();
+        assert!(memory_path.exists());
         assert_eq!(
-            memory_cgroup,
+            memory_path,
             PathBuf::from_iter(&["/sys/fs/cgroup/memory/", ctx.name.as_str()])
         );
-        assert!(memory_cgroup.exists());
     }
 
     #[test]
     fn test_cpu_controller() -> io::Result<()> {
-        let mut ctx = Cgroup::new();
-        ctx.add_controller(Controller::Cpu)?;
-        let cpu_cgroup = ctx.cgroup_path(Controller::Cpu).unwrap();
+        let ctx = Context::new();
 
-        ctx.set_cpu_period(Duration::from_millis(200))?;
-        let mut cpu_period = fs::read(cpu_cgroup.join("cpu.cfs_period_us"))?;
-        assert_eq!(cpu_period.pop(), Some(b'\n'));
-        assert_eq!(
-            cpu_period,
-            Duration::from_millis(200)
-                .as_micros()
-                .to_string()
-                .as_bytes()
-        );
+        let cpu_controller = ctx.cpu_controller();
+        cpu_controller.initialize()?;
 
-        ctx.set_cpu_period(Duration::from_millis(150))?;
-        let mut cpu_period = fs::read(cpu_cgroup.join("cpu.cfs_period_us"))?;
-        assert_eq!(cpu_period.pop(), Some(b'\n'));
-        assert_eq!(
-            cpu_period,
-            Duration::from_millis(150)
-                .as_micros()
-                .to_string()
-                .as_bytes()
-        );
+        cpu_controller.period().write(&Duration::from_millis(200))?;
+        cpu_controller.quota().write(&Duration::from_millis(80))?;
+        assert_eq!(cpu_controller.period().read()?, Duration::from_millis(200));
+        assert_eq!(cpu_controller.quota().read()?, Duration::from_millis(80));
 
-        ctx.set_cpu_quota(Duration::from_millis(500))?;
-        let mut cpu_quota = fs::read(cpu_cgroup.join("cpu.cfs_quota_us"))?;
-        assert_eq!(cpu_quota.pop(), Some(b'\n'));
-        assert_eq!(
-            cpu_quota,
-            Duration::from_millis(500)
-                .as_micros()
-                .to_string()
-                .as_bytes()
-        );
-
-        ctx.set_cpu_quota(Duration::from_millis(800))?;
-        let mut cpu_quota = fs::read(cpu_cgroup.join("cpu.cfs_quota_us"))?;
-        assert_eq!(cpu_quota.pop(), Some(b'\n'));
-        assert_eq!(
-            cpu_quota,
-            Duration::from_millis(800)
-                .as_micros()
-                .to_string()
-                .as_bytes()
-        );
-
-        let cpu_usage = ctx.cpu_usage()?;
-        assert_eq!(cpu_usage, Duration::from_secs(0));
+        cpu_controller.period().write(&Duration::from_millis(150))?;
+        cpu_controller.quota().write(&Duration::from_millis(50))?;
+        assert_eq!(cpu_controller.period().read()?, Duration::from_millis(150));
+        assert_eq!(cpu_controller.quota().read()?, Duration::from_millis(50));
 
         Ok(())
     }
 
     #[test]
+    fn test_cpu_acct_controller() -> io::Result<()> {
+        let ctx = Context::new();
+        let cpuacct_controller = ctx.cpuacct_controller();
+        cpuacct_controller.initialize()?;
+        let cpu_usage = cpuacct_controller.usage()?;
+        assert_eq!(cpu_usage, Duration::from_secs(0));
+        Ok(())
+    }
+
+    #[test]
     fn test_memory_controller() -> io::Result<()> {
-        let mut ctx = Cgroup::new();
-        ctx.add_controller(Controller::Memory)?;
-        let memory_cgroup = ctx.cgroup_path(Controller::Memory).unwrap();
+        let ctx = Context::new();
 
-        ctx.set_memory_limit(128 * 1024)?;
-        let mut memory_limit = fs::read(memory_cgroup.join("memory.limit_in_bytes"))?;
-        assert_eq!(memory_limit.pop(), Some(b'\n'));
-        assert_eq!(memory_limit, (128 * 1024).to_string().as_bytes());
+        let memory_controller = ctx.memory_controller();
+        memory_controller.initialize()?;
 
-        ctx.set_memory_limit(256 * 1024)?;
-        let mut memory_limit = fs::read(memory_cgroup.join("memory.limit_in_bytes"))?;
-        assert_eq!(memory_limit.pop(), Some(b'\n'));
-        assert_eq!(memory_limit, (256 * 1024).to_string().as_bytes());
+        memory_controller.limit_in_bytes().write(&(128 * 1024))?;
+        assert_eq!(memory_controller.limit_in_bytes().read()?, 128 * 1024);
 
-        assert_eq!(ctx.memory_usage()?, 0);
+        memory_controller.limit_in_bytes().write(&(128 * 1024))?;
+        assert_eq!(memory_controller.limit_in_bytes().read()?, 128 * 1024);
 
-        assert_eq!(ctx.memory_failcnt()?, 0);
+        assert_eq!(memory_controller.usage_in_bytes()?, 0);
+        assert_eq!(memory_controller.max_usage_in_bytes()?, 0);
+        assert_eq!(memory_controller.failcnt()?, 0);
 
         Ok(())
     }
