@@ -19,6 +19,13 @@ mod backends {
     use lazy_static::lazy_static;
     use serde::{Deserialize, Serialize};
 
+    lazy_static! {
+        static ref BACKENDS: HashMap<String, Config> = bincode::deserialize(include_bytes!(
+            concat!(env!("OUT_DIR"), "/compiler_backends")
+        ))
+        .unwrap();
+    }
+
     /// A helper structures for building compiler.
     #[derive(Serialize, Deserialize)]
     struct Config {
@@ -28,14 +35,8 @@ mod backends {
         timeout: u64,
     }
 
-    const CONFIG_FILE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/compiler_backends"));
-
-    lazy_static! {
-        static ref COMPILERS: HashMap<String, Config> = { bincode::deserialize(CONFIG_FILE).unwrap() };
-    }
-
     pub fn from_language(language: &str) -> Option<Compiler> {
-        let config = COMPILERS.get(language)?;
+        let config = BACKENDS.get(language)?;
         Some(Compiler {
             suffix: &config.suffix,
             command: &config.command,
@@ -74,7 +75,7 @@ impl Compiler {
     /// a suitable compiler for the language and return it.
     /// Or return `None` if the language is not support.
     ///
-    /// Return an 'Err` if there is a configuration for the `language`
+    /// Return an `Err` if there is a configuration for the `language`
     /// but the configuration is unavailable or there is an io error.
     pub fn new(language: &str) -> Option<Compiler> {
         from_language(language)
