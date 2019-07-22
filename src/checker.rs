@@ -4,7 +4,7 @@ use std::io::{self, BufRead};
 use std::path;
 use std::process;
 
-/// A configurable content comparer
+/// A configurable content comparer.
 pub struct Checker<'a> {
     ignore_white_space_at_line_end: bool,
     ignore_empty_line_at_file_end: bool,
@@ -20,27 +20,27 @@ impl<'a> Checker<'a> {
         Default::default()
     }
 
-    /// Set if the checker ignore white space at line end
+    /// Set if the checker ignore white space at line end.
     pub fn ignore_white_space_at_line_end(mut self, flag: bool) -> Checker<'a> {
         self.ignore_white_space_at_line_end = flag;
         self
     }
 
-    /// Set if the checker ignore empty line at file end
+    /// Set if the checker ignore empty line at file end.
     pub fn ignore_empty_line_at_file_end(mut self, flag: bool) -> Checker<'a> {
         self.ignore_empty_line_at_file_end = flag;
         self
     }
 
-    /// Use an extern program to check the output
+    /// Use an extern program to check the output.
     pub fn extern_program(mut self, program: &'a path::Path) -> Checker<'a> {
         self.extern_program = Some(program);
         self
     }
 
-    /// Compare output file and answer file line by line
+    /// Compare output file and answer file line by line.
     ///
-    /// Return `true` if there is no difference between two files
+    /// Return `true` if there is no difference between two files.
     pub fn compare_files(
         &self,
         output_file: &path::Path,
@@ -59,28 +59,28 @@ impl<'a> Checker<'a> {
         Ok(!self.buf_diff(&mut output_buf, &mut answer_buf)?)
     }
 
-    /// Compare two strings
+    /// Compare two strings.
     ///
-    /// Return `true` if there is no difference between two strings
+    /// Return `true` if there is no difference between two strings.
     pub fn compare_str(&self, output: &str, answer: &str) -> io::Result<bool> {
         self.compare_bytes(output.as_bytes(), answer.as_bytes())
     }
 
-    /// Compare two bytes arrays
+    /// Compare two bytes arrays.
     ///
-    /// Return `true` if there is no difference between two arrays
+    /// Return `true` if there is no difference between two arrays.
     pub fn compare_bytes(&self, output: &[u8], answer: &[u8]) -> io::Result<bool> {
         let mut output_buf = io::BufReader::new(output);
         let mut answer_buf = io::BufReader::new(answer);
         Ok(!self.buf_diff(&mut output_buf, &mut answer_buf)?)
     }
 
-    /// Check output by provided extern program
+    /// Check output by provided extern program.
     ///
     /// The result is completely depended on the extern program.
-    /// So the ignore_* options of the checker will be ignored.
+    /// So the `ignore_*` options of the checker will be ignored.
     ///
-    /// Return `true` if extern program exit successfully
+    /// Return `true` if extern program exit successfully.
     pub fn check_use_extern_program(
         &self,
         input_file: &path::Path,
@@ -100,13 +100,13 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Check if two buffers is equal line by line
+    /// Check if two buffers is equal line by line.
     ///
     /// Handle the blank line at the end of file
     /// and white space at the end of line
     /// by the checker's options.
     ///
-    /// Return `false` if there is no difference between two buffers
+    /// Return `false` if there is no difference between two buffers.
     fn buf_diff<T: BufRead, U: BufRead>(
         &self,
         output_buf: &mut T,
@@ -164,7 +164,7 @@ impl<'a> Checker<'a> {
 }
 
 /// Default checker compare two files/strings/bytes line by line and
-/// ignore white space at line end and empty line at file end
+/// ignore white space at line end and empty line at file end.
 impl<'a> Default for Checker<'a> {
     fn default() -> Checker<'a> {
         Checker {
