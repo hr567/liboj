@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::env;
-use std::fs::{read_dir, read_to_string, File};
+use std::fs::{read_dir, read_to_string, write};
+use std::io;
 use std::path::PathBuf;
 
 use bincode;
@@ -20,19 +21,33 @@ lazy_static! {
     };
 }
 
-fn main() {
-    generate_compiler_backends();
-    generate_seccomp_binding();
+fn main() -> io::Result<()> {
+    watch_changes()?;
+    generate_compiler_backends()?;
+    generate_seccomp_binding()?;
+    Ok(())
 }
 
-fn generate_seccomp_binding() {
+fn watch_changes() -> io::Result<()> {
+    println!("cargo:rerun-if-changed={}", "Cargo.toml");
+    read_dir(&ROOT_DIR.join("src/compiler/backends"))?.for_each(|backend| {
+        println!(
+            "cargo:rerun-if-changed={}",
+            backend.unwrap().path().to_str().unwrap()
+        );
+    });
+    println!("cargo:rerun-if-changed=/usr/include/seccomp.h");
+    Ok(())
+}
+
+fn generate_seccomp_binding() -> io::Result<()> {
     println!("cargo:rustc-link-lib=dylib=seccomp");
     bindgen::builder()
         .header_contents("seccomp_wrapper.h", "#include<seccomp.h>")
         .generate()
         .expect("Failed to generate seccomp bindings")
-        .write_to_file(OUT_DIR.join("seccomp_wrapper.rs"))
-        .unwrap();
+        .write_to_file(OUT_DIR.join("seccomp_wrapper.rs"))?;
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -43,15 +58,12 @@ struct Config {
     timeout: u64,
 }
 
-fn generate_compiler_backends() {
-    let backends_dir = ROOT_DIR.join("src/compiler/backends");
-    let mut backends: HashMap<String, Config> = HashMap::new();
-    read_dir(&backends_dir)
-        .unwrap()
+fn generate_compiler_backends() -> io::Result<()> {
+    let backends: HashMap<String, Config> = read_dir(&ROOT_DIR.join("src/compiler/backends"))?
         .map(|entry| entry.unwrap())
         .filter(|entry| entry.file_name().to_str().unwrap().ends_with(".json"))
         .map(|entry| (entry.file_name(), read_to_string(&entry.path()).unwrap()))
-        .for_each(|(filename, config)| {
+        .map(|(filename, config)| {
             let language = filename
                 .to_str()
                 .unwrap()
@@ -59,8 +71,12 @@ fn generate_compiler_backends() {
                 .to_owned();
             let config: Config = serde_json::from_str(&config)
                 .expect(&format!("Configuration file {} is unavailable", &language));
-            backends.insert(language, config);
-        });
-    let backends_file = File::create(OUT_DIR.join("compiler_backends")).unwrap();
-    bincode::serialize_into(backends_file, &backends).unwrap();
+            (language, config)
+        })
+        .collect();
+    write(
+        OUT_DIR.join("compiler_backends"),
+        bincode::serialize(&backends).unwrap(),
+    )?;
+    Ok(())
 }
