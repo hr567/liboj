@@ -7,9 +7,13 @@ use std::ops::Deref;
 
 use nix;
 
+/// Syscall wrapper.
 pub struct Syscall(u32);
 
 impl Syscall {
+    /// Resolve the name of a syscall.
+    ///
+    /// Panic if the argument is not a available syscall name.
     pub fn from_name(name: &str) -> Syscall {
         let name = CString::new(name).unwrap();
         let syscall = unsafe { seccomp_syscall_resolve_name(name.as_ptr()) };
@@ -26,10 +30,12 @@ impl Deref for Syscall {
     }
 }
 
+/// Seccomp context.
 pub struct Context {
     ctx: scmp_filter_ctx,
 }
 
+/// Default seccomp context with the `kill` action.
 impl Default for Context {
     fn default() -> Context {
         Context {
@@ -39,12 +45,14 @@ impl Default for Context {
 }
 
 impl Context {
+    /// Create a new seccomp context with the given action.
     pub fn new(act: Act) -> Context {
         Context {
             ctx: unsafe { seccomp_init(act as u32) },
         }
     }
 
+    /// Add a new rule to the context.
     pub fn add_rule(&self, rule: Rule) -> nix::Result<()> {
         let rc = unsafe {
             seccomp_rule_add_array(
@@ -63,6 +71,7 @@ impl Context {
         Ok(())
     }
 
+    /// Reset the context with a new default action.
     pub fn reset(&self, default_act: Act) -> nix::Result<()> {
         let rc = unsafe { seccomp_reset(self.ctx, default_act as u32) };
 
@@ -73,6 +82,7 @@ impl Context {
         Ok(())
     }
 
+    /// Load the current seccomp filter into the kernel.
     pub fn load(&self) -> nix::Result<()> {
         let rc = unsafe { seccomp_load(self.ctx) };
 
@@ -84,6 +94,7 @@ impl Context {
     }
 }
 
+/// Release the context.
 impl Drop for Context {
     fn drop(&mut self) {
         unsafe {
@@ -92,6 +103,7 @@ impl Drop for Context {
     }
 }
 
+/// Filter rule for seccomp context.
 pub struct Rule {
     act: Act,
     syscall: Syscall,
@@ -99,6 +111,7 @@ pub struct Rule {
 }
 
 impl Rule {
+    /// Create a new rule for `syscall` with the `act` action.
     pub fn new(act: Act, syscall: Syscall) -> Rule {
         Rule {
             act,
@@ -107,18 +120,22 @@ impl Rule {
         }
     }
 
+    /// Create a whitelist rule for `syscall`.
     pub fn whitelist(syscall: Syscall) -> Rule {
         Rule::new(Act::Allow, syscall)
     }
 
+    /// Create a blacklist rule for `syscall`.
     pub fn blacklist(syscall: Syscall) -> Rule {
         Rule::new(Act::Kill, syscall)
     }
 
+    /// Add the new argument to the rule filter.
     pub fn match_arg(&mut self, op: CmpOp, arg: i64) {
         self.pattern.push((op, arg));
     }
 
+    /// Get the arguments of the rule.
     pub fn args(&self) -> &Vec<(CmpOp, i64)> {
         &self.pattern
     }
@@ -137,6 +154,7 @@ impl Rule {
     }
 }
 
+/// Support actions in seccomp.
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
 #[repr(u32)]
@@ -150,6 +168,7 @@ pub enum Act {
     // Log = SCMP_ACT_LOG,
 }
 
+/// Comparing operations the filter uses.
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
 #[repr(u32)]

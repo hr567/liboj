@@ -1,6 +1,26 @@
-//! Program runner with resource limit and system call filter.
 // TODO: Add tests
-// TODO: Need improvements
+//! Program runner with resource limit and system call filter.
+//!
+//! # Usage:
+//!
+//! ```no_run
+//! # use std::time::*;
+//! # use std::io;
+//! # use liboj::*;
+//! let runner = Runner::new(
+//!     "/bin/wc",
+//!     "/dev/null",
+//!     "/dev/null",
+//!     Resource::new(
+//!         Duration::from_secs(2),  // Real time limit
+//!         Duration::from_secs(1),  // CPU time limit
+//!         16 * 1024 * 1024,        // Memory limit
+//!     ),
+//! );
+//! let report = runner.run().unwrap();
+//! assert!(report.exit_success);
+//! ```
+
 pub mod cgroup;
 pub mod seccomp;
 
@@ -21,7 +41,7 @@ use crate::structures::Resource;
 use cgroup::Controller;
 use nix;
 
-/// Report of the program
+/// Report of the program.
 #[derive(Debug)]
 pub struct RunnerReport {
     /// set to `true` if the program exit with code zero and
@@ -32,6 +52,7 @@ pub struct RunnerReport {
     pub resource_usage: Resource,
 }
 
+/// Program runner with resource limit, cgroup, chroot and seccomp support.
 pub struct Runner {
     program: PathBuf,
     input_file: PathBuf,
@@ -43,6 +64,7 @@ pub struct Runner {
 }
 
 impl Runner {
+    /// Create a new runner with resource limit.
     pub fn new(
         program: impl AsRef<Path>,
         input_file: impl AsRef<Path>,
@@ -60,21 +82,27 @@ impl Runner {
         }
     }
 
+    /// Chroot to the given path.
     pub fn chroot(mut self, chroot_path: impl AsRef<Path>) -> Runner {
         self.chroot = Some(chroot_path.as_ref().to_owned());
         self
     }
 
+    /// Load the seccomp config before executing the program.
     pub fn seccomp(mut self, seccomp: seccomp::Context) -> Runner {
         self.seccomp = Some(seccomp);
         self
     }
 
+    /// Add the process to the cgroup before it start running.
     pub fn cgroup(mut self, cgroup: cgroup::Context) -> Runner {
         self.cgroup = cgroup;
         self
     }
 
+    /// Run the program and return the report of the process.
+    ///
+    /// Return `Error` if there is any trouble with running it.
     pub fn run(&self) -> Result<RunnerReport, Box<dyn Error>> {
         match nix::unistd::fork()? {
             nix::unistd::ForkResult::Parent { child } => self.start_parent(child),
