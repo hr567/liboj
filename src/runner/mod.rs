@@ -1,13 +1,9 @@
 //! Program runner with resource limit and system call filter.
 // TODO: Add tests
 // TODO: Need improvements
-mod cgroup;
-mod seccomp;
+pub mod cgroup;
+pub mod seccomp;
 
-pub use cgroup::*;
-pub use seccomp::*;
-
-// use std::borrow::ToOwned;
 use std::error::Error;
 use std::ffi::CString;
 use std::fs::File;
@@ -21,9 +17,9 @@ use std::os::unix::{
     io::{AsRawFd as _, IntoRawFd as _},
 };
 
-use nix;
-
 use crate::structures::Resource;
+use cgroup::Controller;
+use nix;
 
 /// Report of the program
 #[derive(Debug)]
@@ -40,10 +36,10 @@ pub struct Runner {
     program: PathBuf,
     input_file: PathBuf,
     output_file: PathBuf,
-    cgroup: Cgroup,
+    resource_limit: Resource,
+    cgroup: cgroup::Context,
     chroot: Option<PathBuf>,
-    seccomp: Option<ScmpCtx>,
-    resource_limit: Option<Resource>,
+    seccomp: Option<seccomp::Context>,
 }
 
 impl Runner {
@@ -51,15 +47,16 @@ impl Runner {
         program: impl AsRef<Path>,
         input_file: impl AsRef<Path>,
         output_file: impl AsRef<Path>,
+        resource_limit: Resource,
     ) -> Runner {
         Runner {
             program: program.as_ref().to_owned(),
             input_file: input_file.as_ref().to_owned(),
             output_file: output_file.as_ref().to_owned(),
-            cgroup: Cgroup::default(),
+            resource_limit,
+            cgroup: cgroup::Context::new(),
             chroot: None,
             seccomp: None,
-            resource_limit: None,
         }
     }
 
@@ -68,23 +65,13 @@ impl Runner {
         self
     }
 
-    pub fn seccomp(mut self, seccomp: ScmpCtx) -> Runner {
+    pub fn seccomp(mut self, seccomp: seccomp::Context) -> Runner {
         self.seccomp = Some(seccomp);
         self
     }
 
-    pub fn cgroup(mut self, cgroup: Cgroup) -> Runner {
+    pub fn cgroup(mut self, cgroup: cgroup::Context) -> Runner {
         self.cgroup = cgroup;
-        self
-    }
-
-    pub fn resource_limit(mut self, limit: Resource) -> Runner {
-        if limit.real_time > Duration::from_secs(0)
-            && limit.cpu_time > Duration::from_secs(0)
-            && limit.memory > 0
-        {
-            self.resource_limit = Some(limit);
-        }
         self
     }
 
@@ -102,16 +89,14 @@ impl Runner {
 impl Runner {
     fn start_parent(&self, child: nix::unistd::Pid) -> Result<RunnerReport, Box<dyn Error>> {
         let start_time = Instant::now();
+        self.init_cgroup()?;
         self.cgroup.add_process(child)?;
-        if let Some(limit) = &self.resource_limit {
-            let time_limit = limit.real_time;
+        {
+            let time_limit = self.resource_limit.real_time;
             thread::spawn(move || {
                 thread::sleep(time_limit);
                 nix::sys::signal::kill(child, nix::sys::signal::SIGKILL).unwrap_or_default();
             });
-            self.cgroup.set_cpu_period(limit.real_time)?;
-            self.cgroup.set_cpu_quota(limit.cpu_time)?;
-            self.cgroup.set_memory_limit(limit.memory)?;
         }
         let exit_success = match nix::sys::wait::waitpid(child, None)? {
             nix::sys::wait::WaitStatus::Exited(_, code) => code == 0,
@@ -119,9 +104,9 @@ impl Runner {
             _ => unreachable!("Should not appear other cases"),
         };
         let resource_usage = Resource::new(
-            self.cgroup.cpu_usage()?,
+            self.cgroup.cpuacct_controller().usage()?,
             start_time.elapsed(),
-            self.cgroup.memory_usage()?,
+            self.cgroup.memory_controller().max_usage_in_bytes()?,
         );
         Ok(RunnerReport {
             exit_success,
@@ -165,13 +150,38 @@ impl Runner {
         )
     }
 
-    fn init_seccomp(&self, program_ptr: *const i8) -> Result<(), Box<dyn Error>> {
+    fn init_cgroup(&self) -> io::Result<()> {
+        let cpu_controller = self.cgroup.cpu_controller();
+        let cpuacct_controller = self.cgroup.cpuacct_controller();
+        let memory_controller = self.cgroup.memory_controller();
+        cpu_controller.initialize()?;
+        cpuacct_controller.initialize()?;
+        memory_controller.initialize()?;
+        let Resource {
+            real_time,
+            cpu_time,
+            ..
+        } = self.resource_limit;
+        let period = Duration::from_secs(1);
+        let quota = {
+            let cpu_time = cpu_time.as_micros() as u32;
+            let real_time = real_time.as_micros() as u32;
+            period * cpu_time / real_time
+        };
+        cpu_controller.period().write(&period)?;
+        cpu_controller.quota().write(&quota)?;
+        memory_controller
+            .limit_in_bytes()
+            .write(&self.resource_limit.memory)?;
+        Ok(())
+    }
+
+    fn init_seccomp(&self, program_ptr: *const i8) -> nix::Result<()> {
         if let Some(scmp) = &self.seccomp {
-            scmp.whitelist(seccomp::syscall_resolve_name("execve").unwrap(), {
-                let mut pattern = seccomp::Pattern::new();
-                pattern.add_arg(seccomp::CmpOp::EQ, program_ptr as i64);
-                pattern
-            })?;
+            let mut execve_whitelist =
+                seccomp::Rule::whitelist(seccomp::Syscall::from_name("execve"));
+            execve_whitelist.match_arg(seccomp::CmpOp::EQ, program_ptr as i64);
+            scmp.add_rule(execve_whitelist)?;
             scmp.load()?;
         }
         Ok(())

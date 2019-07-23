@@ -25,9 +25,18 @@ fn generate_output_file() -> io::Result<tempfile::TempPath> {
 fn test_basic_runner() -> io::Result<()> {
     let input_file = generate_input_file()?;
     let output_file = generate_output_file()?;
-    let report = Runner::new(&PROGRAM, &input_file, &output_file)
-        .run()
-        .unwrap();
+    let report = Runner::new(
+        &PROGRAM,
+        &input_file,
+        &output_file,
+        Resource::new(
+            Duration::from_secs(2),
+            Duration::from_secs(1),
+            16 * 1024 * 1024,
+        ),
+    )
+    .run()
+    .unwrap();
     assert!(report.exit_success);
     assert_eq!(fs::read(&output_file)?, ANSWER_CONTENT.as_bytes());
     Ok(())
@@ -37,11 +46,20 @@ fn test_basic_runner() -> io::Result<()> {
 fn test_runner_with_cgroup() -> io::Result<()> {
     let input_file = generate_input_file()?;
     let output_file = generate_input_file()?;
-    let cg = Cgroup::default();
-    let report = Runner::new(&PROGRAM, &input_file, &output_file)
-        .cgroup(cg)
-        .run()
-        .unwrap();
+    let cg = cgroup::Context::new();
+    let report = Runner::new(
+        &PROGRAM,
+        &input_file,
+        &output_file,
+        Resource::new(
+            Duration::from_secs(2),
+            Duration::from_secs(1),
+            16 * 1024 * 1024,
+        ),
+    )
+    .cgroup(cg)
+    .run()
+    .unwrap();
     assert!(report.exit_success);
     let resource_usage = report.resource_usage;
     assert_ne!(resource_usage.cpu_time, Duration::from_secs(0));
@@ -55,10 +73,19 @@ fn test_runner_with_cgroup() -> io::Result<()> {
 fn test_runner_with_chroot() -> io::Result<()> {
     let input_file = generate_input_file()?;
     let output_file = generate_input_file()?;
-    let report = Runner::new(&PROGRAM, &input_file, &output_file)
-        .chroot("/")
-        .run()
-        .unwrap();
+    let report = Runner::new(
+        &PROGRAM,
+        &input_file,
+        &output_file,
+        Resource::new(
+            Duration::from_secs(2),
+            Duration::from_secs(1),
+            16 * 1024 * 1024,
+        ),
+    )
+    .chroot("/")
+    .run()
+    .unwrap();
     assert!(report.exit_success);
     assert_eq!(fs::read(&output_file)?, ANSWER_CONTENT.as_bytes());
     Ok(())

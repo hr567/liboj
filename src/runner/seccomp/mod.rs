@@ -3,49 +3,56 @@ mod libseccomp;
 use libseccomp::*;
 
 use std::ffi::CString;
+use std::ops::Deref;
 
 use nix;
 
-pub type Syscall = u32;
-pub fn syscall_resolve_name(name: &str) -> Option<Syscall> {
-    let name = CString::new(name).unwrap();
-    let syscall = unsafe { seccomp_syscall_resolve_name(name.as_ptr()) };
-    if syscall < 0 {
-        None
-    } else {
-        Some(syscall as u32)
+pub struct Syscall(u32);
+
+impl Syscall {
+    pub fn from_name(name: &str) -> Syscall {
+        let name = CString::new(name).unwrap();
+        let syscall = unsafe { seccomp_syscall_resolve_name(name.as_ptr()) };
+        assert!(syscall >= 0, "No such syscall");
+        Syscall(syscall as u32)
     }
 }
 
-pub struct ScmpCtx {
+impl Deref for Syscall {
+    type Target = u32;
+
+    fn deref(&self) -> &u32 {
+        &self.0
+    }
+}
+
+pub struct Context {
     ctx: scmp_filter_ctx,
 }
 
-impl Default for ScmpCtx {
-    fn default() -> ScmpCtx {
-        ScmpCtx {
+impl Default for Context {
+    fn default() -> Context {
+        Context {
             ctx: unsafe { seccomp_init(Act::Kill as u32) },
         }
     }
 }
 
-impl ScmpCtx {
-    pub fn new(act: Act) -> ScmpCtx {
-        ScmpCtx {
+impl Context {
+    pub fn new(act: Act) -> Context {
+        Context {
             ctx: unsafe { seccomp_init(act as u32) },
         }
     }
 
-    pub fn add_rule(&self, act: Act, syscall: Syscall, pattern: Pattern) -> nix::Result<()> {
-        let pattern = pattern.as_scmp_arg_cmp();
-
+    pub fn add_rule(&self, rule: Rule) -> nix::Result<()> {
         let rc = unsafe {
             seccomp_rule_add_array(
                 self.ctx,
-                act as u32,
-                syscall as i32,
-                pattern.len() as u32,
-                pattern.as_ptr(),
+                rule.act as u32,
+                *rule.syscall as i32,
+                rule.args().len() as u32,
+                rule.to_arg_cmp().as_ptr(),
             )
         };
 
@@ -56,24 +63,28 @@ impl ScmpCtx {
         Ok(())
     }
 
-    pub fn whitelist(&self, syscall: Syscall, pattern: Pattern) -> nix::Result<()> {
-        self.add_rule(Act::Allow, syscall, pattern)
-    }
+    pub fn reset(&self, default_act: Act) -> nix::Result<()> {
+        let rc = unsafe { seccomp_reset(self.ctx, default_act as u32) };
 
-    pub fn blacklist(&self, syscall: Syscall, pattern: Pattern) -> nix::Result<()> {
-        self.add_rule(Act::Kill, syscall, pattern)
-    }
-
-    pub fn load(&self) -> Result<(), nix::errno::Errno> {
-        if unsafe { seccomp_load(self.ctx) } == 0 {
-            Ok(())
-        } else {
-            Err(nix::errno::from_i32(nix::errno::errno()))
+        if rc < 0 {
+            return Err(nix::Error::from_errno(nix::errno::from_i32(-rc)));
         }
+
+        Ok(())
+    }
+
+    pub fn load(&self) -> nix::Result<()> {
+        let rc = unsafe { seccomp_load(self.ctx) };
+
+        if rc < 0 {
+            return Err(nix::Error::from_errno(nix::errno::from_i32(-rc)));
+        }
+
+        Ok(())
     }
 }
 
-impl Drop for ScmpCtx {
+impl Drop for Context {
     fn drop(&mut self) {
         unsafe {
             seccomp_release(self.ctx);
@@ -81,19 +92,39 @@ impl Drop for ScmpCtx {
     }
 }
 
-pub struct Pattern(Vec<(CmpOp, i64)>);
+pub struct Rule {
+    act: Act,
+    syscall: Syscall,
+    pattern: Vec<(CmpOp, i64)>,
+}
 
-impl Pattern {
-    pub fn new() -> Pattern {
-        Pattern::default()
+impl Rule {
+    pub fn new(act: Act, syscall: Syscall) -> Rule {
+        Rule {
+            act,
+            syscall,
+            pattern: Vec::new(),
+        }
     }
 
-    pub fn add_arg(&mut self, op: CmpOp, arg: i64) {
-        self.0.push((op, arg));
+    pub fn whitelist(syscall: Syscall) -> Rule {
+        Rule::new(Act::Allow, syscall)
     }
 
-    pub fn as_scmp_arg_cmp(&self) -> Vec<scmp_arg_cmp> {
-        self.0
+    pub fn blacklist(syscall: Syscall) -> Rule {
+        Rule::new(Act::Kill, syscall)
+    }
+
+    pub fn match_arg(&mut self, op: CmpOp, arg: i64) {
+        self.pattern.push((op, arg));
+    }
+
+    pub fn args(&self) -> &Vec<(CmpOp, i64)> {
+        &self.pattern
+    }
+
+    fn to_arg_cmp(&self) -> Vec<scmp_arg_cmp> {
+        self.pattern
             .iter()
             .enumerate()
             .map(|(index, (op, value))| scmp_arg_cmp {
@@ -106,23 +137,17 @@ impl Pattern {
     }
 }
 
-impl Default for Pattern {
-    fn default() -> Pattern {
-        Pattern(Vec::new())
-    }
-}
-
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
 #[repr(u32)]
 pub enum Act {
+    Allow = SCMP_ACT_ALLOW,
     Kill = SCMP_ACT_KILL,
     // KillProcess = SCMP_ACT_KILL_PROCESS,
     // Trap = SCMP_ACT_TRAP,
     // Errno = SCMP_ACT_ERRNO,
     // Trace = SCMP_ACT_TRACE,
     // Log = SCMP_ACT_LOG,
-    Allow = SCMP_ACT_ALLOW,
 }
 
 #[allow(dead_code)]
