@@ -142,7 +142,7 @@ impl Runner {
         })
     }
 
-    fn start_child(&self) -> Result<(), Box<Error>> {
+    fn start_child(&self) -> Result<(), Box<dyn Error>> {
         let input_fd = File::open(&self.input_file)?.into_raw_fd();
         nix::unistd::dup2(input_fd, io::stdin().as_raw_fd())?;
         nix::unistd::close(input_fd)?;

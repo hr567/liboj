@@ -113,7 +113,7 @@ impl<'a> Checker<'a> {
         answer_buf: &mut U,
     ) -> io::Result<bool> {
         loop {
-            let get_line = |buf_reader: &mut BufRead| -> io::Result<Option<Vec<u8>>> {
+            let get_line = |buf_reader: &mut dyn BufRead| -> io::Result<Option<Vec<u8>>> {
                 let mut buf = Vec::new();
                 buf_reader.read_until(b'\n', &mut buf)?;
 
