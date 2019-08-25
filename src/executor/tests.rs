@@ -2,56 +2,74 @@ use super::*;
 
 use std::fs::{self, File};
 use std::io::{self, prelude::*};
+use std::process::Command;
 use std::time::Duration;
 use std::time::Instant;
 
 use tempfile;
 
 const PROGRAM: &str = r#"/bin/sh"#;
+const TIMEOUT_INPUT_CONTENT: &str = r#"sleep 100"#;
 const INPUT_CONTENT: &str = r#"echo -n "hello, world""#;
 const ANSWER_CONTENT: &str = r#"hello, world"#;
 
-fn generate_input_file() -> io::Result<tempfile::TempPath> {
-    let mut input_file = tempfile::Builder::new().suffix(".in").tempfile()?;
-    input_file.write_all(INPUT_CONTENT.as_bytes())?;
-    Ok(input_file.into_temp_path())
+macro_rules! input_file {
+    () => {{
+        let mut input_file = tempfile::Builder::new().suffix(".in").tempfile()?;
+        input_file.write_all(INPUT_CONTENT.as_bytes())?;
+        input_file.into_temp_path()
+    }};
 }
 
-fn generate_output_file() -> io::Result<tempfile::TempPath> {
-    let output_file = tempfile::Builder::new().suffix(".out").tempfile()?;
-    Ok(output_file.into_temp_path())
+macro_rules! output_file {
+    () => {{
+        tempfile::Builder::new()
+            .suffix(".out")
+            .tempfile()?
+            .into_temp_path()
+    }};
 }
 
-fn generate_cg_ctx() -> io::Result<cgroup::Context> {
-    let cg_ctx = cgroup::Builder::new().build()?;
+macro_rules! timeout_input_file {
+    () => {{
+        let mut input_file = tempfile::Builder::new().suffix(".in").tempfile()?;
+        input_file.write_all(TIMEOUT_INPUT_CONTENT.as_bytes())?;
+        input_file.into_temp_path()
+    }};
+}
 
-    let cpu_controller = cg_ctx.cpu_controller().unwrap();
-    let memory_controller = cg_ctx.memory_controller().unwrap();
+macro_rules! cg_ctx {
+    () => {{
+        let cg_ctx = cgroup::Builder::new().build()?;
 
-    let real_time = Duration::from_secs(2);
-    let cpu_time = Duration::from_secs(1);
+        let cpu_controller = cg_ctx.cpu_controller().unwrap();
+        let memory_controller = cg_ctx.memory_controller().unwrap();
 
-    let period = Duration::from_secs(1);
-    let quota = {
-        let real_time = real_time.as_micros() as u32;
-        let cpu_time = cpu_time.as_micros() as u32;
-        period * cpu_time / real_time
-    };
+        let real_time = Duration::from_secs(2);
+        let cpu_time = Duration::from_secs(1);
 
-    cpu_controller.period().write(&period)?;
-    cpu_controller.quota().write(&quota)?;
-    memory_controller
-        .limit_in_bytes()
-        .write(&(16 * 1024 * 1024))?;
+        let period = Duration::from_secs(1);
+        let quota = {
+            let real_time = real_time.as_micros() as u32;
+            let cpu_time = cpu_time.as_micros() as u32;
+            period * cpu_time / real_time
+        };
 
-    Ok(cg_ctx)
+        cpu_controller.period().write(&period)?;
+        cpu_controller.quota().write(&quota)?;
+        memory_controller
+            .limit_in_bytes()
+            .write(&(16 * 1024 * 1024))?;
+
+        cg_ctx
+    }};
 }
 
 #[test]
 fn test_cgroup() -> io::Result<()> {
-    let input_file = generate_input_file()?;
-    let output_file = generate_output_file()?;
-    let cg_ctx = generate_cg_ctx()?;
+    let input_file = input_file!();
+    let output_file = output_file!();
+    let cg_ctx = cg_ctx!();
 
     let start_time = Instant::now();
     let exit_status = Command::new(&PROGRAM)
@@ -79,9 +97,9 @@ fn test_cgroup() -> io::Result<()> {
 }
 
 #[test]
-fn test_runner_with_chroot() -> io::Result<()> {
-    let input_file = generate_input_file()?;
-    let output_file = generate_output_file()?;
+fn test_chroot() -> io::Result<()> {
+    let input_file = input_file!();
+    let output_file = output_file!();
 
     let exit_status = Command::new(&PROGRAM)
         .stdin(File::open(&input_file)?)
@@ -94,4 +112,43 @@ fn test_runner_with_chroot() -> io::Result<()> {
     assert_eq!(fs::read(&output_file)?, ANSWER_CONTENT.as_bytes());
 
     Ok(())
+}
+
+#[test]
+fn test_unshare() -> io::Result<()> {
+    let input_file = input_file!();
+    let output_file = output_file!();
+
+    let exit_status = Command::new(&PROGRAM)
+        .stdin(File::open(&input_file)?)
+        .stdout(File::create(&output_file)?)
+        .unshare_all_ns()
+        .spawn()?
+        .wait()?;
+
+    assert!(exit_status.success());
+    assert_eq!(fs::read(&output_file)?, ANSWER_CONTENT.as_bytes());
+
+    Ok(())
+}
+
+#[test]
+fn test_timeout() -> io::Result<()> {
+    let input_file = timeout_input_file!();
+    let output_file = output_file!();
+
+    let exit_status = Command::new(&PROGRAM)
+        .stdin(File::open(&input_file)?)
+        .stdout(File::create(&output_file)?)
+        .timeout(Duration::from_secs(1))?
+        .wait()?;
+
+    assert!(!exit_status.success());
+
+    Ok(())
+}
+
+#[test]
+fn test_seccomp() -> io::Result<()> {
+    unimplemented!("TODO: Add seccomp test")
 }
