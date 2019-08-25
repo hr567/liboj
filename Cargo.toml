@@ -1,6 +1,6 @@
 [package]
 name = "liboj"
-version = "0.2.3"
+version = "0.3.0"
 description = "A high performance framework for building online judge system"
 authors = ["hr567 <hr567@hr567.me>"]
 readme = "README.md"
@@ -10,27 +10,28 @@ edition = "2018"
 build = "build.rs"
 
 [dependencies]
-bincode = "^1.1.4"
-lazy_static = "^1.3.0"
-nix = "^0.14.1"
-serde = { version = "^1.0.92", features = ["derive"] }
-tempfile = "^3.0.8"
-uuid = { version = "^0.7.4", features = ["v4"] }
+bincode = "1.1.4"
+lazy_static = "1.3.0"
+nix = "0.15.0"
+serde = { version = "1.0.92", features = ["derive"] }
+tempfile = "3.0.8"
+uuid = { version = "0.7.4", features = ["v4"] }
 
 [dev-dependencies]
 
 [build-dependencies]
-bincode = "^1.1.4"
-bindgen = "^0.49.2"
-lazy_static = "^1.3.0"
-serde = { version = "^1.0.92", features = ["derive"] }
-serde_json = "^1.0.39"
+bincode = "1.1.4"
+bindgen = "0.49.2"
+lazy_static = "1.3.0"
+serde = { version = "1.0.92", features = ["derive"] }
+serde_json = "1.0.39"
 
 [features]
-default = ["gcc", "gxx"]
+default = ["gcc", "gxx", "seccomp"]
 
 gcc = []
 gxx = []
+seccomp = []
 
 [badges]
 gitlab = { repository = "https://gitlab.com/hr567/liboj", branch = "master" }

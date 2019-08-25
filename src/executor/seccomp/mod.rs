@@ -53,7 +53,7 @@ impl Context {
     }
 
     /// Add a new rule to the context.
-    pub fn add_rule(&self, rule: Rule) -> nix::Result<()> {
+    pub fn add_rule(&mut self, rule: Rule) -> nix::Result<()> {
         let rc = unsafe {
             seccomp_rule_add_array(
                 self.ctx,
@@ -72,7 +72,7 @@ impl Context {
     }
 
     /// Reset the context with a new default action.
-    pub fn reset(&self, default_act: Act) -> nix::Result<()> {
+    pub fn reset(&mut self, default_act: Act) -> nix::Result<()> {
         let rc = unsafe { seccomp_reset(self.ctx, default_act as u32) };
 
         if rc < 0 {
@@ -102,6 +102,9 @@ impl Drop for Context {
         }
     }
 }
+
+unsafe impl Send for Context {}
+unsafe impl Sync for Context {}
 
 /// Filter rule for seccomp context.
 pub struct Rule {

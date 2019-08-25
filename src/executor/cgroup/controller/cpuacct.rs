@@ -86,26 +86,23 @@ impl<'a, T: 'a + AsRef<Path>> CpuAcctController<'a, T> {
     }
 }
 
-impl<'a, T: 'a + AsRef<Path> + From<PathBuf>> Controller<'a> for CpuAcctController<'a, T> {
+impl<'a> Controller<'a> for CpuAcctController<'a, PathBuf> {
     const NAME: &'static str = "cpuacct";
 
-    fn from_ctx(context: &Context) -> CpuAcctController<T> {
-        let inner = Context::root().join(Self::NAME).join(&context.name);
+    fn from_ctx(context: &Context) -> CpuAcctController<PathBuf> {
         CpuAcctController {
-            inner: inner.into(),
+            inner: Context::root().join(Self::NAME).join(&context.name),
             _mark: PhantomData,
         }
     }
 
     fn initialize(&self) -> io::Result<()> {
-        if !self.is_initialized() {
-            create_dir(&self.inner)?;
+        match create_dir(&self.inner) {
+            Ok(_) => {}
+            Err(ref e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
         }
         Ok(())
-    }
-
-    fn is_initialized(&self) -> bool {
-        self.inner.as_ref().exists()
     }
 }
 

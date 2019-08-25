@@ -27,24 +27,21 @@ impl<'a, T: 'a + AsRef<Path>> CpuController<'a, T> {
     }
 }
 
-impl<'a, T: 'a + AsRef<Path> + From<PathBuf>> Controller<'a> for CpuController<'a, T> {
+impl<'a> Controller<'a> for CpuController<'a, PathBuf> {
     const NAME: &'static str = "cpu";
 
-    fn from_ctx(context: &Context) -> CpuController<T> {
-        let inner = Context::root().join(Self::NAME).join(&context.name);
+    fn from_ctx(context: &Context) -> CpuController<PathBuf> {
         CpuController {
-            inner: inner.into(),
+            inner: Context::root().join(Self::NAME).join(&context.name),
             _mark: PhantomData,
         }
     }
 
-    fn is_initialized(&self) -> bool {
-        self.inner.as_ref().exists()
-    }
-
     fn initialize(&self) -> io::Result<()> {
-        if !self.is_initialized() {
-            create_dir(&self.inner)?;
+        match create_dir(&self.inner) {
+            Ok(_) => {}
+            Err(ref e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
         }
         Ok(())
     }
@@ -67,7 +64,7 @@ impl<'a, T: 'a + AsRef<Path>> AttrFile<'a, Duration, Duration> for CpuTimeFile<'
         Ok(Duration::from_micros(attr))
     }
 
-    fn write(&self, attr: &Duration) -> io::Result<()> {
+    fn write(&mut self, attr: &Duration) -> io::Result<()> {
         write(&self.inner, attr.as_micros().to_string())?;
         Ok(())
     }

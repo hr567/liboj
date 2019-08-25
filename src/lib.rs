@@ -4,12 +4,11 @@
 pub mod checker;
 /// Interface for different compilers.
 pub mod compiler;
-/// Program runner with resource limit and system calls filter.
-pub mod runner;
+/// Executor for running a single program with resource limit and system calls filter.
+pub mod executor;
 /// Structures definitions.
 pub mod structures;
 
 pub use checker::Checker;
 pub use compiler::Compiler;
-pub use runner::Runner;
 pub use structures::*;
