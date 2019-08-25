@@ -68,20 +68,20 @@ impl CommandExt for Command {
     fn unshare_all_ns(&mut self) -> &mut Command {
         unsafe {
             self.pre_exec(move || {
-                nix::sched::unshare(nix::sched::CloneFlags::all())
-                    .expect("Failed to unshare namespace");
-                // Namespaces unshared in before version:
-                // nix::sched::CloneFlags::empty()
-                //     | nix::sched::CloneFlags::CLONE_FILES
-                //     | nix::sched::CloneFlags::CLONE_FS
-                //     | nix::sched::CloneFlags::CLONE_NEWCGROUP
-                //     | nix::sched::CloneFlags::CLONE_NEWIPC
-                //     | nix::sched::CloneFlags::CLONE_NEWNET
-                //     | nix::sched::CloneFlags::CLONE_NEWNS
-                //     | nix::sched::CloneFlags::CLONE_NEWPID
-                //     | nix::sched::CloneFlags::CLONE_NEWUSER
-                //     | nix::sched::CloneFlags::CLONE_NEWUTS
-                //     | nix::sched::CloneFlags::CLONE_SYSVSEM,
+                nix::sched::unshare(
+                    nix::sched::CloneFlags::empty()
+                        | nix::sched::CloneFlags::CLONE_FILES
+                        | nix::sched::CloneFlags::CLONE_FS
+                        | nix::sched::CloneFlags::CLONE_NEWCGROUP
+                        | nix::sched::CloneFlags::CLONE_NEWIPC
+                        | nix::sched::CloneFlags::CLONE_NEWNET
+                        | nix::sched::CloneFlags::CLONE_NEWNS
+                        | nix::sched::CloneFlags::CLONE_NEWPID
+                        | nix::sched::CloneFlags::CLONE_NEWUSER
+                        | nix::sched::CloneFlags::CLONE_NEWUTS
+                        | nix::sched::CloneFlags::CLONE_SYSVSEM,
+                )
+                .expect("Failed to unshare namespace");
                 Ok(())
             });
         }
