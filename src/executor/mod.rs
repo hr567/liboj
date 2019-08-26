@@ -7,7 +7,8 @@ pub mod seccomp;
 use std::io;
 use std::os::unix::process::CommandExt as _;
 use std::path::Path;
-use std::process::{Child, Command};
+use std::process::{Child, Command, ExitStatus, Output};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -26,23 +27,9 @@ trait CommandExt {
 
     /// Chroot to a new path before exec.
     fn chroot<P: AsRef<Path>>(&mut self, new_root: P) -> &mut Command;
-
-    /// Run the command with a time limit.
-    /// If the command times out, the child process will be killed.
-    fn timeout(&mut self, timeout: Duration) -> io::Result<Child>;
 }
 
 impl CommandExt for Command {
-    fn timeout(&mut self, timeout: Duration) -> io::Result<Child> {
-        let child = self.spawn()?;
-        let pid = nix::unistd::Pid::from_raw(child.id() as nix::libc::pid_t);
-        thread::spawn(move || {
-            thread::sleep(timeout);
-            let _ = nix::sys::signal::kill(pid, nix::sys::signal::SIGKILL);
-        });
-        Ok(child)
-    }
-
     fn seccomp(&mut self, ctx: seccomp::Context) -> &mut Command {
         unsafe {
             self.pre_exec(move || {
@@ -98,6 +85,53 @@ impl CommandExt for Command {
             });
         }
         self
+    }
+}
+
+trait ChildExt {
+    fn timeout(&mut self, timeout: Duration) -> io::Result<ExitStatus>;
+    fn timeout_with_output(self, timeout: Duration) -> io::Result<Output>;
+}
+
+impl ChildExt for Child {
+    fn timeout(&mut self, timeout: Duration) -> io::Result<ExitStatus> {
+        let (tx, rx) = mpsc::channel();
+        let pid = nix::unistd::Pid::from_raw(self.id() as nix::libc::pid_t);
+        thread::spawn(move || {
+            match rx.recv_timeout(timeout) {
+                Ok(_) => {} // Do nothing if the child process exit before times out
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    // Kill the child process if it times out
+                    let _ = nix::sys::signal::kill(pid, nix::sys::signal::SIGKILL);
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    panic!("Channel disconnected unexpected")
+                }
+            }
+        });
+        let status = self.wait()?;
+        let _ = tx.send(());
+        Ok(status)
+    }
+
+    fn timeout_with_output(self, timeout: Duration) -> io::Result<Output> {
+        let (tx, rx) = mpsc::channel();
+        let pid = nix::unistd::Pid::from_raw(self.id() as nix::libc::pid_t);
+        thread::spawn(move || {
+            match rx.recv_timeout(timeout) {
+                Ok(_) => {} // Do nothing if the child process exit before times out
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    // Kill the child process if it times out
+                    let _ = nix::sys::signal::kill(pid, nix::sys::signal::SIGKILL);
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    panic!("Channel disconnected unexpected")
+                }
+            }
+        });
+        let output = self.wait_with_output()?;
+        let _ = tx.send(());
+        Ok(output)
     }
 }
 

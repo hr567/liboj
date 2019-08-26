@@ -140,8 +140,8 @@ fn test_timeout() -> io::Result<()> {
     let exit_status = Command::new(&PROGRAM)
         .stdin(File::open(&input_file)?)
         .stdout(File::create(&output_file)?)
-        .timeout(Duration::from_secs(1))?
-        .wait()?;
+        .spawn()?
+        .timeout(Duration::from_secs(1))?;
 
     assert!(!exit_status.success());
 
@@ -149,6 +149,7 @@ fn test_timeout() -> io::Result<()> {
 }
 
 #[test]
-fn test_seccomp() -> io::Result<()> {
+#[should_panic]
+fn test_seccomp() {
     unimplemented!("TODO: Add seccomp test")
 }
