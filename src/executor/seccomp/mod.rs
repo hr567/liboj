@@ -4,6 +4,8 @@ use libseccomp::*;
 
 use std::ffi::CString;
 use std::ops::Deref;
+use std::os::unix::process::CommandExt as _;
+use std::process::Command;
 
 use nix;
 
@@ -172,7 +174,6 @@ pub enum Act {
 }
 
 /// Comparing operations the filter uses.
-#[allow(dead_code)]
 #[derive(Copy, Clone)]
 #[repr(u32)]
 pub enum CmpOp {
@@ -185,4 +186,22 @@ pub enum CmpOp {
     GT = scmp_compare_SCMP_CMP_GT,
     // MaskedEq = scmp_compare_SCMP_CMP_MASKED_EQ,
     // Max = scmp_compare__SCMP_CMP_MAX,
+}
+
+/// Extra features make Command run in a new container.
+trait CommandExt {
+    /// Load the seccomp config in child process.
+    fn seccomp(&mut self, ctx: Context) -> &mut Command;
+}
+
+impl CommandExt for Command {
+    fn seccomp(&mut self, ctx: Context) -> &mut Command {
+        unsafe {
+            self.pre_exec(move || {
+                ctx.load().expect("Failed to load seccomp context");
+                Ok(())
+            });
+        }
+        self
+    }
 }

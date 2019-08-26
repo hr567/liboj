@@ -2,6 +2,11 @@
 //! Run a program in a new container with resource limit and system calls filter.
 
 pub mod cgroup;
+
+#[cfg(feature = "cap-ng")]
+pub mod capng;
+
+#[cfg(feature = "seccomp")]
 pub mod seccomp;
 
 use std::io;
@@ -16,12 +21,6 @@ use nix;
 
 /// Extra features make Command run in a new container.
 trait CommandExt {
-    /// Load the seccomp config in child process.
-    fn seccomp(&mut self, ctx: seccomp::Context) -> &mut Command;
-
-    /// Attach the child process to the cgroup.
-    fn cgroup(&mut self, ctx: cgroup::Context) -> &mut Command;
-
     /// Run program with all namespaces unshared.
     fn unshare_all_ns(&mut self) -> &mut Command;
 
@@ -30,28 +29,6 @@ trait CommandExt {
 }
 
 impl CommandExt for Command {
-    fn seccomp(&mut self, ctx: seccomp::Context) -> &mut Command {
-        unsafe {
-            self.pre_exec(move || {
-                ctx.load().expect("Failed to load seccomp context");
-                Ok(())
-            });
-        }
-        self
-    }
-
-    fn cgroup(&mut self, ctx: cgroup::Context) -> &mut Command {
-        // Ensure that the cgroup context will not be dropped in child process
-        let ctx = Box::leak(Box::new(ctx));
-        unsafe {
-            self.pre_exec(move || {
-                ctx.add_process(nix::unistd::Pid::this())?;
-                Ok(())
-            });
-        }
-        self
-    }
-
     fn unshare_all_ns(&mut self) -> &mut Command {
         unsafe {
             self.pre_exec(move || {

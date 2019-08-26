@@ -21,17 +21,19 @@ uuid = { version = "0.7.4", features = ["v4"] }
 
 [build-dependencies]
 bincode = "1.1.4"
-bindgen = "0.49.2"
 lazy_static = "1.3.0"
 serde = { version = "1.0.92", features = ["derive"] }
 serde_json = "1.0.39"
 
+bindgen = { version = "0.49.2", optional = true }
+
 [features]
-default = ["gcc", "gxx", "seccomp"]
+default = ["gcc", "gxx"]
 
 gcc = []
 gxx = []
-seccomp = []
+seccomp = ["bindgen"]
+cap-ng = ["bindgen"]
 
 [badges]
 gitlab = { repository = "https://gitlab.com/hr567/liboj", branch = "master" }

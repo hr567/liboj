@@ -4,7 +4,9 @@ mod hierarchy;
 
 use std::fs::remove_dir;
 use std::io;
+use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use nix::unistd::Pid;
 use uuid::Uuid;
@@ -173,6 +175,25 @@ impl Default for Builder {
             cpuacct_controller: true,
             memory_controller: true,
         }
+    }
+}
+
+pub trait CommandExt {
+    /// Attach the child process to the cgroup.
+    fn cgroup(&mut self, ctx: Context) -> &mut Command;
+}
+
+impl CommandExt for Command {
+    fn cgroup(&mut self, ctx: Context) -> &mut Command {
+        // Ensure that the cgroup context will not be dropped in child process
+        let ctx = Box::leak(Box::new(ctx));
+        unsafe {
+            self.pre_exec(move || {
+                ctx.add_process(nix::unistd::Pid::this())?;
+                Ok(())
+            });
+        }
+        self
     }
 }
 

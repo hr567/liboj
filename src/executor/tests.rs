@@ -6,6 +6,7 @@ use std::process::Command;
 use std::time::Duration;
 use std::time::Instant;
 
+use cgroup::CommandExt as _;
 use tempfile;
 
 const PROGRAM: &str = r#"/bin/sh"#;
@@ -148,8 +149,16 @@ fn test_timeout() -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "seccomp")]
 #[test]
 #[should_panic]
 fn test_seccomp() {
     unimplemented!("TODO: Add seccomp test")
+}
+
+#[cfg(feature = "cap-ng")]
+#[test]
+#[should_panic]
+fn test_capabilities() {
+    unimplemented!("TODO: Add capabilities test")
 }
