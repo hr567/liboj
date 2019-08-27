@@ -1,11 +1,8 @@
 // TODO: Add tests
 //! Run a program in a new container with resource limit and system calls filter.
-
-pub mod cgroup;
-
 #[cfg(feature = "cap-ng")]
 pub mod capng;
-
+pub mod cgroup;
 #[cfg(feature = "seccomp")]
 pub mod seccomp;
 
@@ -20,7 +17,7 @@ use std::time::Duration;
 use nix;
 
 /// Extra features make Command run in a new container.
-trait CommandExt {
+pub trait CommandExt {
     /// Run program with all namespaces unshared.
     fn unshare_all_ns(&mut self) -> &mut Command;
 
@@ -65,7 +62,7 @@ impl CommandExt for Command {
     }
 }
 
-trait ChildExt {
+pub trait ChildExt {
     fn timeout(&mut self, timeout: Duration) -> io::Result<ExitStatus>;
     fn timeout_with_output(self, timeout: Duration) -> io::Result<Output>;
 }

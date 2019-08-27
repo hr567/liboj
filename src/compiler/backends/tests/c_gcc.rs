@@ -13,8 +13,8 @@ fn test_c_gcc_compile() -> io::Result<()> {
     };
     let compiler = Compiler::new(&source.language).unwrap();
     let executable_file = tempfile::NamedTempFile::new()?.into_temp_path();
-    let compile_success = compiler.compile(&source, &executable_file)?;
-    assert!(compile_success);
+    let compiler_output = compiler.compile(&source, &executable_file)?;
+    assert!(compiler_output.status.success());
     Ok(())
 }
 
@@ -26,7 +26,7 @@ fn test_c_gcc_compile_failed() -> io::Result<()> {
     };
     let compiler = Compiler::new(&source.language).unwrap();
     let executable_file = tempfile::NamedTempFile::new()?.into_temp_path();
-    let compile_success = compiler.compile(&source, &executable_file)?;
-    assert!(!compile_success);
+    let compiler_output = compiler.compile(&source, &executable_file)?;
+    assert!(!compiler_output.status.success());
     Ok(())
 }

@@ -1,74 +1,38 @@
-//! Interface for different compilers.
-#[cfg(test)]
-mod test_backends {
-    //! Supported compilers.
-    #[cfg(feature = "gcc")]
-    mod c_gcc;
-
-    #[cfg(feature = "gxx")]
-    mod cpp_gxx;
-}
-
-mod backends {
-    use super::Compiler;
-
-    use std::collections::HashMap;
-    use std::time::Duration;
-
-    use bincode;
-    use lazy_static::lazy_static;
-    use serde::{Deserialize, Serialize};
-
-    lazy_static! {
-        static ref BACKENDS: HashMap<String, Config> = bincode::deserialize(include_bytes!(
-            concat!(env!("OUT_DIR"), "/compiler_backends")
-        ))
-        .unwrap();
-    }
-
-    /// A helper structures for building compiler.
-    #[derive(Serialize, Deserialize)]
-    struct Config {
-        suffix: String,
-        command: String,
-        args: Vec<String>,
-        timeout: u64,
-    }
-
-    pub fn from_language(language: &str) -> Option<Compiler> {
-        let config = BACKENDS.get(language)?;
-        Some(Compiler {
-            suffix: &config.suffix,
-            command: &config.command,
-            args: &config.args,
-            timeout: Duration::from_secs(config.timeout),
-        })
-    }
-}
+mod backends;
 
 use std::ffi::OsString;
 use std::io::{self, prelude::*};
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::thread::sleep;
-use std::time::{Duration, Instant};
+use std::process::{Command, Output, Stdio};
+use std::time::Duration;
 
+use crate::executor::ChildExt as _;
 use crate::structures::Source;
-use backends::from_language;
 
 /// A simple compiler interface for compile a single file to a executable file.
-pub struct Compiler {
+pub struct Compiler<'a> {
     /// Suffix which source file should be used.
-    suffix: &'static str,
+    suffix: &'a str,
     /// Command of the compiler in system.
-    command: &'static str,
+    command: &'a str,
     /// Arguments of the compiler.
-    args: &'static Vec<String>,
+    args: &'a Vec<String>,
     /// Timeout of the compiler.
     timeout: Duration,
 }
 
-impl Compiler {
+impl<'a> From<&'a backends::CompilerConfig> for Compiler<'a> {
+    fn from(config: &'a backends::CompilerConfig) -> Compiler<'a> {
+        Compiler {
+            suffix: &config.suffix,
+            command: &config.command,
+            args: &config.args,
+            timeout: Duration::from_secs(config.timeout),
+        }
+    }
+}
+
+impl<'a> Compiler<'a> {
     /// Generate a new compiler for `language`.
     ///
     /// Choose a configuration from backends to build
@@ -78,7 +42,7 @@ impl Compiler {
     /// Return an `Err` if there is a configuration for the `language`
     /// but the configuration is unavailable or there is an io error.
     pub fn new(language: &str) -> Option<Compiler> {
-        from_language(language)
+        Some(Compiler::from(backends::get_config(language)?))
     }
 
     /// Compile `source` to `executable_file`.
@@ -89,15 +53,17 @@ impl Compiler {
     ///
     /// Return the result of the compiler process,
     /// or return `Err` if the command run incorrectly.
-    pub fn compile(&self, source: &Source, executable_file: &Path) -> io::Result<bool> {
-        let mut source_file = tempfile::Builder::new()
-            .prefix("source_")
-            .suffix(&format!(".{}", &self.suffix))
-            .tempfile()?;
-        source_file.write_all(source.code.as_bytes())?;
-        let source_file = source_file.into_temp_path();
+    pub fn compile(&self, source: &Source, executable_file: &Path) -> io::Result<Output> {
+        let source_file = {
+            let mut res = tempfile::Builder::new()
+                .prefix("source_")
+                .suffix(&format!(".{}", &self.suffix))
+                .tempfile()?;
+            res.write_all(source.code.as_bytes())?;
+            res.into_temp_path()
+        };
 
-        let mut child = Command::new(&self.command)
+        let output = Command::new(&self.command)
             .args(self.args.iter().map(|arg| match arg.as_str() {
                 "{source_file}" => source_file.as_os_str().to_owned(),
                 "{executable_file}" => executable_file.as_os_str().to_owned(),
@@ -105,23 +71,10 @@ impl Compiler {
             }))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
+            .stderr(Stdio::piped())
+            .spawn()?
+            .timeout_with_output(self.timeout)?;
 
-        let start_time = Instant::now();
-        let result = loop {
-            match child.try_wait()? {
-                Some(status) => break status,
-                None => {
-                    if start_time.elapsed() > self.timeout {
-                        child.kill()?;
-                    } else {
-                        sleep(Duration::from_millis(100));
-                    }
-                }
-            }
-        };
-
-        Ok(result.success())
+        Ok(output)
     }
 }

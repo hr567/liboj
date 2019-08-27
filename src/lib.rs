@@ -2,7 +2,7 @@
 
 /// A configurable output checker.
 pub mod checker;
-/// Interface for different compilers.
+/// A simple API for different compilers.
 pub mod compiler;
 /// Executor for running a single program with resource limit and system calls filter.
 pub mod executor;

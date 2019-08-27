@@ -12,6 +12,10 @@ use serde_json;
 #[cfg(any(feature = "seccomp", feature = "cap-ng"))]
 use bindgen;
 
+const SECCOMP_HEADER: &str = "/usr/include/seccomp.h";
+const CAPNG_HEADER: &str = "/usr/include/cap-ng.h";
+const COMPILER_CONFIGS: &str = "src/compiler/backends/";
+
 lazy_static! {
     static ref OUT_DIR: PathBuf = {
         let out_dir = env::var("OUT_DIR").unwrap();
@@ -25,7 +29,7 @@ lazy_static! {
 
 fn main() -> io::Result<()> {
     watch_changes()?;
-    generate_compiler_backends()?;
+    generate_compiler_configs()?;
     #[cfg(feature = "seccomp")]
     generate_libseccomp_binding()?;
     #[cfg(feature = "cap-ng")]
@@ -35,18 +39,18 @@ fn main() -> io::Result<()> {
 
 fn watch_changes() -> io::Result<()> {
     println!("cargo:rerun-if-changed={}", "Cargo.toml");
-    fs::read_dir(&ROOT_DIR.join("src/compiler/backends"))?.for_each(|backend| {
+    fs::read_dir(&ROOT_DIR.join(COMPILER_CONFIGS))?.for_each(|backend| {
         println!(
             "cargo:rerun-if-changed={}",
             backend.unwrap().path().to_str().unwrap()
         );
     });
-    println!("cargo:rerun-if-changed=/usr/include/seccomp.h");
-    println!("cargo:rerun-if-changed=/usr/include/cap-ng.h");
+    println!("cargo:rerun-if-changed={}", SECCOMP_HEADER);
+    println!("cargo:rerun-if-changed={}", CAPNG_HEADER);
     Ok(())
 }
 
-fn generate_compiler_backends() -> io::Result<()> {
+fn generate_compiler_configs() -> io::Result<()> {
     #[derive(Serialize, Deserialize)]
     struct CompilerConfig {
         suffix: String,
@@ -55,8 +59,8 @@ fn generate_compiler_backends() -> io::Result<()> {
         timeout: u64,
     }
 
-    let backends: HashMap<String, CompilerConfig> =
-        fs::read_dir(&ROOT_DIR.join("src/compiler/backends"))?
+    let languages: HashMap<String, CompilerConfig> =
+        fs::read_dir(&ROOT_DIR.join(COMPILER_CONFIGS))?
             .map(|entry| entry.unwrap())
             .filter(|entry| entry.file_name().to_str().unwrap().ends_with(".json"))
             .map(|entry| {
@@ -78,8 +82,8 @@ fn generate_compiler_backends() -> io::Result<()> {
             .collect();
 
     fs::write(
-        OUT_DIR.join("compiler_backends"),
-        bincode::serialize(&backends).unwrap(),
+        OUT_DIR.join("languages"),
+        bincode::serialize(&languages).unwrap(),
     )?;
 
     Ok(())
