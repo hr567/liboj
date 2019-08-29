@@ -6,6 +6,13 @@ pub mod cgroup;
 #[cfg(feature = "seccomp")]
 pub mod seccomp;
 
+pub mod prelude {
+    pub use super::cgroup::CommandExt as CommandExtCgroup;
+    #[cfg(feature = "seccomp")]
+    pub use super::seccomp::CommandExt as CommandExtSeccomp;
+    pub use super::{ChildExt, CommandExt};
+}
+
 use std::io;
 use std::os::unix::process::CommandExt as _;
 use std::path::Path;

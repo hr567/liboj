@@ -189,7 +189,7 @@ pub enum CmpOp {
 }
 
 /// Extra features make Command run in a new container.
-trait CommandExt {
+pub trait CommandExt {
     /// Load the seccomp config in child process.
     fn seccomp(&mut self, ctx: Context) -> &mut Command;
 }

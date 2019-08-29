@@ -7,9 +7,10 @@ use std::io;
 use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
 
 use nix::unistd::Pid;
-use uuid::Uuid;
+use rand;
 
 pub use attr_file::AttrFile;
 pub use controller::*;
@@ -141,8 +142,20 @@ impl Builder {
     }
 
     pub fn build(self) -> io::Result<Context> {
+        let name = match self.name {
+            Some(name) => name,
+            None => {
+                let timestamp = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos();
+                let salt: u128 = rand::random();
+                format!("{:x}{:x}", timestamp, salt)
+            }
+        };
+
         let ctx = Context {
-            name: self.name.unwrap_or_else(|| Uuid::new_v4().to_string()),
+            name,
             cpu_controller_enable: self.cpu_controller,
             cpuacct_controller_enable: self.cpuacct_controller,
             memory_controller_enable: self.memory_controller,
